@@ -6,13 +6,11 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "placeholde
 // Browser-safe client (anon key)
 export const browserClient = createClient(supabaseUrl, supabaseAnonKey);
 
-// Server-only client (service key — bypasses RLS)
+// Server-only client (service key — bypasses RLS). Returns null when env vars are absent.
 export function serverClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const serviceKey = process.env.SUPABASE_SERVICE_KEY ?? "";
-  if (!url || !serviceKey) {
-    throw new Error("Supabase env vars not configured");
-  }
+  if (!url || !serviceKey) return null;
   return createClient(url, serviceKey, {
     auth: { persistSession: false },
   });

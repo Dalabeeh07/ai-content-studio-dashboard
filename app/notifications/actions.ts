@@ -23,6 +23,7 @@ export async function sendNotification(formData: FormData): Promise<{
   }
 
   const db = serverClient();
+  if (!db) return { ok: false, error: "Server not configured." };
 
   // Insert the notification
   const { data: notif, error: nErr } = await db
@@ -88,6 +89,7 @@ export async function deleteNotification(notifId: string): Promise<{
   error?: string;
 }> {
   const db = serverClient();
+  if (!db) return { ok: false, error: "Server not configured." };
 
   // user_notifications rows cascade-delete (FK ON DELETE CASCADE)
   const { error } = await db

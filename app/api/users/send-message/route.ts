@@ -9,6 +9,9 @@ export async function POST(req: NextRequest) {
   }
 
   const db = serverClient();
+  if (!db) {
+    return NextResponse.json({ error: "Server not configured." }, { status: 503 });
+  }
 
   // Insert global notification
   const { data: notif, error: nErr } = await db

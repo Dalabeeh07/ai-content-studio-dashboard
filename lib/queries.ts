@@ -3,6 +3,7 @@ import type { ClipRow, EarningsUserRow, MonthlyBar, SummaryStats, UserRow } from
 
 export async function fetchUsers(): Promise<UserRow[]> {
   const db = serverClient();
+  if (!db) return [];
 
   // Fetch users + license status
   const { data: users, error: uErr } = await db
@@ -55,6 +56,7 @@ export async function fetchUsers(): Promise<UserRow[]> {
 
 export async function fetchClips(): Promise<ClipRow[]> {
   const db = serverClient();
+  if (!db) return [];
 
   const { data, error } = await db
     .from("clips")
@@ -104,6 +106,7 @@ export async function fetchEarnings(): Promise<{
   totals: { gross: number; userShare: number; adminShare: number };
 }> {
   const db = serverClient();
+  if (!db) return { rows: [], monthly: [], totals: { gross: 0, userShare: 0, adminShare: 0 } };
 
   const { data: clips, error } = await db
     .from("clips")
@@ -191,6 +194,8 @@ export async function fetchSummary(users: UserRow[]): Promise<SummaryStats> {
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
   const db = serverClient();
+  if (!db) return { total_users: users.length, active_today: 0, total_clips: 0, total_earnings: 0 };
+
   const { count: totalClips } = await db
     .from("clips")
     .select("id", { count: "exact", head: true });

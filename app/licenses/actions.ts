@@ -42,6 +42,7 @@ export async function generateLicenses(formData: FormData): Promise<{
   }));
 
   const db = serverClient();
+  if (!db) return { ok: false, error: "Server not configured." };
   const { error } = await db.from("licenses").insert(rows);
 
   if (error) return { ok: false, error: error.message };
@@ -54,6 +55,7 @@ export async function generateLicenses(formData: FormData): Promise<{
 
 export async function revokeLicense(licenseKey: string): Promise<{ ok: boolean; error?: string }> {
   const db = serverClient();
+  if (!db) return { ok: false, error: "Server not configured." };
   const { error } = await db
     .from("licenses")
     .update({ status: "revoked" })
@@ -69,6 +71,7 @@ export async function revokeLicense(licenseKey: string): Promise<{ ok: boolean; 
 export async function bulkRevoke(keys: string[]): Promise<{ ok: boolean; error?: string }> {
   if (keys.length === 0) return { ok: true };
   const db = serverClient();
+  if (!db) return { ok: false, error: "Server not configured." };
   const { error } = await db
     .from("licenses")
     .update({ status: "revoked" })
@@ -83,6 +86,7 @@ export async function bulkRevoke(keys: string[]): Promise<{ ok: boolean; error?:
 
 export async function unbindDevice(licenseKey: string): Promise<{ ok: boolean; error?: string }> {
   const db = serverClient();
+  if (!db) return { ok: false, error: "Server not configured." };
   const { error } = await db
     .from("licenses")
     .update({ hardware_id: null, activated_at: null })
@@ -98,6 +102,7 @@ export async function unbindDevice(licenseKey: string): Promise<{ ok: boolean; e
 export async function updateCredits(licenseKey: string, credits: number): Promise<{ ok: boolean; error?: string }> {
   if (credits < 1 || credits > 10_000) return { ok: false, error: "Credits must be 1–10,000." };
   const db = serverClient();
+  if (!db) return { ok: false, error: "Server not configured." };
   const { error } = await db
     .from("licenses")
     .update({ credits_limit: credits })

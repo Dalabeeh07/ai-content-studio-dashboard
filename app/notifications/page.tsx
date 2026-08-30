@@ -55,6 +55,7 @@ function fmtDate(iso: string): string {
 
 async function fetchPageData() {
   const db = serverClient();
+  if (!db) return { notifs: [] as NotifRow[], activity: [] as ActivityRow[], userOptions: [] as { hardware_id: string; label: string }[], totalUsers: 0 };
 
   // Users (for compose form + recipient labels)
   const { data: usersRaw } = await db

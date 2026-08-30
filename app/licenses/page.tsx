@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 async function fetchLicenses(): Promise<LicenseRow[]> {
   const db = serverClient();
+  if (!db) return [];
 
   const { data, error } = await db
     .from("licenses")

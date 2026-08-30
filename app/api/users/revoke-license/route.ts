@@ -9,6 +9,9 @@ export async function POST(req: NextRequest) {
   }
 
   const db = serverClient();
+  if (!db) {
+    return NextResponse.json({ error: "Server not configured." }, { status: 503 });
+  }
 
   const { error } = await db
     .from("licenses")
