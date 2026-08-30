@@ -9,7 +9,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const adminPassword = process.env.ADMIN_PASSWORD ?? "";
+  const adminPassword = (process.env.ADMIN_PASSWORD ?? "").trim();
   const cookie = req.cookies.get("admin_auth")?.value ?? "";
 
   if (!adminPassword || cookie !== adminPassword) {
