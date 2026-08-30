@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const NAV = [
   { label: "Dashboard",     href: "/",              icon: "◈" },
@@ -10,11 +10,25 @@ const NAV = [
   { label: "Clips",         href: "/clips",          icon: "✂" },
   { label: "Notifications", href: "/notifications",  icon: "🔔" },
   { label: "Licenses",      href: "/licenses",       icon: "🔑" },
+  { label: "Pending",       href: "/pending",        icon: "⏳" },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  // Poll pending count every 30 s so the badge stays fresh
+  useEffect(() => {
+    const fetchCount = () =>
+      fetch("/api/pending/count")
+        .then((r) => r.json())
+        .then((d) => setPendingCount(d.count ?? 0))
+        .catch(() => {});
+    fetchCount();
+    const t = setInterval(fetchCount, 30_000);
+    return () => clearInterval(t);
+  }, []);
 
   const handleLogout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -43,6 +57,7 @@ export default function Sidebar() {
         {NAV.map(({ label, href, icon }) => {
           const active =
             href === "/" ? pathname === "/" : pathname.startsWith(href);
+          const showBadge = label === "Pending" && pendingCount > 0;
           return (
             <Link
               key={href}
@@ -55,7 +70,13 @@ export default function Sidebar() {
                           }`}
             >
               <span className="text-base leading-none w-5 text-center">{icon}</span>
-              {label}
+              <span className="flex-1">{label}</span>
+              {showBadge && (
+                <span className="ml-auto bg-brand-orange text-white text-[10px] font-bold
+                                 px-1.5 py-0.5 rounded-full leading-none">
+                  {pendingCount}
+                </span>
+              )}
             </Link>
           );
         })}
