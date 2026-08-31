@@ -12,7 +12,7 @@ async function fetchLicenses(): Promise<LicenseRow[]> {
 
   const { data, error } = await db
     .from("licenses")
-    .select("id, key, label, credits_limit, hardware_id, status, activated_at, expires_at")
+    .select("id, key, label, credits_limit, hardware_id, status, activated_at, created_at, expires_at")
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);
@@ -25,6 +25,7 @@ async function fetchLicenses(): Promise<LicenseRow[]> {
     hardware_id: string | null;
     status: "active" | "expired" | "revoked";
     activated_at: string | null;
+    created_at: string;
     expires_at: string | null;
   }[]).map((r) => ({
     id:            r.id,
@@ -34,6 +35,7 @@ async function fetchLicenses(): Promise<LicenseRow[]> {
     hardware_id:   r.hardware_id,
     status:        r.status,
     activated_at:  r.activated_at,
+    created_at:    r.created_at,
     expires_at:    r.expires_at,
   }));
 }

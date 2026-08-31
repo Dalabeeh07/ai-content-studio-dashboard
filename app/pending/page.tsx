@@ -8,6 +8,7 @@ type PendingUser = {
   hwid: string;
   status: "pending" | "approved" | "rejected";
   registered_at: string;
+  reviewed_at: string | null;
   reject_reason: string | null;
 };
 
