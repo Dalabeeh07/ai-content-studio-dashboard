@@ -8,7 +8,7 @@ import { revokeLicense, bulkRevoke, unbindDevice, updateCredits } from "@/app/li
 export interface LicenseRow {
   id: string;
   key: string;
-  user_label: string | null;
+  label: string | null;
   credits_limit: number;
   hardware_id: string | null;
   status: "active" | "expired" | "revoked";
@@ -372,7 +372,7 @@ export default function LicensesTable({ licenses }: { licenses: LicenseRow[] }) 
                   {/* Label */}
                   <td className={TD}>
                     <span className="text-xs text-[#e8e8f0]">
-                      {row.user_label ?? <span className="text-[#3a3a60]">—</span>}
+                      {row.label ?? <span className="text-[#3a3a60]">—</span>}
                     </span>
                   </td>
 

@@ -27,7 +27,7 @@ export async function generateLicenses(formData: FormData): Promise<{
   error?: string;
 }> {
   const creditsLimit = Math.max(1, Number(formData.get("credits_limit")) || 50);
-  const userLabel    = (formData.get("user_label") as string).trim() || null;
+  const userLabel    = (formData.get("label") as string).trim() || null;
   const expiresRaw   = (formData.get("expires") as string) || null;
   const quantity     = Math.min(10, Math.max(1, Number(formData.get("quantity")) || 1));
 
@@ -36,7 +36,7 @@ export async function generateLicenses(formData: FormData): Promise<{
   const rows = Array.from({ length: quantity }, () => ({
     key:           generateKey(),
     credits_limit: creditsLimit,
-    user_label:    userLabel,
+    label:         userLabel,
     expires_at:    expiresAt,
     status:        "active" as const,
   }));

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -33,7 +33,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-[#08080f]">
       <div className="w-full max-w-sm px-8 py-10 rounded-2xl border border-[#1e1e38] bg-[#0f0f1c]">
         <h1 className="text-2xl font-bold text-white mb-1">Admin Dashboard</h1>
-        <p className="text-[#7070a0] text-sm mb-8">AI Content Studio</p>
+        <p className="text-[#7070a0] text-sm mb-8">Plovika</p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <input

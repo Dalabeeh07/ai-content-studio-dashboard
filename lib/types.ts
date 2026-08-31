@@ -2,12 +2,14 @@ export type LicenseStatus = "active" | "expired" | "revoked";
 
 export interface UserRow {
   id: string;
-  hardware_id: string;
+  hwid: string;
+  email: string | null;
   license_key: string | null;
-  whop_username: string | null;
-  social_usernames: Record<string, string>;
+  status: string | null;
   created_at: string;
-  last_active_at: string;
+  last_active_at: string | null;
+  whop_earnings: number | null;
+  clips_count: number | null;
   // joined
   license_status: LicenseStatus | null;
   clip_count_30d: number;
@@ -16,23 +18,16 @@ export interface UserRow {
 
 export interface ClipRow {
   id: string;
-  user_hardware_id: string | null;
-  whop_username: string | null;
-  filename: string;
-  content_type: string;
-  duration_sec: number | null;
-  score: number | null;
-  exported_at: string;
-  published_url: string | null;
-  platform: string | null;
-  views: number | null;
-  estimated_earnings_usd: number | null;
+  hwid: string | null;
+  user_email: string | null;
+  created_at: string;
+  status: string | null;
+  earnings: number | null;
 }
 
 export interface EarningsUserRow {
-  hardware_id: string;
-  whop_username: string | null;
-  total_views: number;
+  hwid: string;
+  user_email: string | null;
   gross_earnings: number;
   user_share: number;   // 60%
   admin_share: number;  // 40%

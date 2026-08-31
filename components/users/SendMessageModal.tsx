@@ -8,25 +8,14 @@ interface Props {
   onClose: () => void;
 }
 
-const TYPE_OPTIONS = [
-  { value: "message",  label: "📢 Message" },
-  { value: "campaign", label: "💰 Campaign" },
-  { value: "update",   label: "🔄 Update" },
-];
-
 export default function SendMessageModal({ user, onClose }: Props) {
-  const [type, setType]     = useState("message");
-  const [title, setTitle]   = useState("");
-  const [body, setBody]     = useState("");
-  const [url, setUrl]       = useState("");
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState("");
+  const [error, setError]     = useState("");
   const [success, setSuccess] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const displayName = user.whop_username
-    ? `@${user.whop_username}`
-    : `User #${user.hardware_id.slice(0, 6)}`;
+  const displayName = user.email ?? `User #${user.hwid.slice(0, 6)}`;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -37,11 +26,8 @@ export default function SendMessageModal({ user, onClose }: Props) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        hardware_id: user.hardware_id,
-        type,
-        title,
-        body,
-        action_url: url || undefined,
+        hardware_id: user.hwid,
+        message,
       }),
     });
 
@@ -83,65 +69,17 @@ export default function SendMessageModal({ user, onClose }: Props) {
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div>
               <label className="block text-[#7070a0] text-xs mb-1.5 uppercase tracking-wide">
-                Type
-              </label>
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                className="w-full bg-[#141428] border border-[#1e1e38] rounded-lg px-3 py-2
-                           text-[#e8e8f0] text-sm focus:outline-none focus:border-[#4a9eff]"
-              >
-                {TYPE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[#7070a0] text-xs mb-1.5 uppercase tracking-wide">
-                Title
-              </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
-                maxLength={120}
-                placeholder="Notification title"
-                className="w-full bg-[#141428] border border-[#1e1e38] rounded-lg px-3 py-2
-                           text-[#e8e8f0] text-sm placeholder-[#3a3a60]
-                           focus:outline-none focus:border-[#4a9eff]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[#7070a0] text-xs mb-1.5 uppercase tracking-wide">
-                Body
+                Message
               </label>
               <textarea
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
                 required
-                rows={3}
+                rows={4}
                 maxLength={500}
-                placeholder="Message body…"
+                placeholder="Notification message…"
                 className="w-full bg-[#141428] border border-[#1e1e38] rounded-lg px-3 py-2
                            text-[#e8e8f0] text-sm placeholder-[#3a3a60] resize-none
-                           focus:outline-none focus:border-[#4a9eff]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[#7070a0] text-xs mb-1.5 uppercase tracking-wide">
-                Action URL <span className="normal-case">(optional)</span>
-              </label>
-              <input
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://…"
-                className="w-full bg-[#141428] border border-[#1e1e38] rounded-lg px-3 py-2
-                           text-[#e8e8f0] text-sm placeholder-[#3a3a60]
                            focus:outline-none focus:border-[#4a9eff]"
               />
             </div>

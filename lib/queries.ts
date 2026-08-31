@@ -5,7 +5,7 @@ export async function fetchUsers(): Promise<UserRow[]> {
   const db = serverClient();
   if (!db) return [];
 
-  // Fetch users + license status
+  // Fetch users + license status via FK (users.license_id → licenses.id)
   const { data: users, error: uErr } = await db
     .from("users")
     .select("*, licenses(status)")
@@ -19,35 +19,37 @@ export async function fetchUsers(): Promise<UserRow[]> {
 
   const { data: clipAgg, error: cErr } = await db
     .from("clips")
-    .select("user_hardware_id, id, estimated_earnings_usd, exported_at")
-    .gte("exported_at", thirtyDaysAgo);
+    .select("hwid, id, earnings, created_at")
+    .gte("created_at", thirtyDaysAgo);
 
   if (cErr) throw new Error(`fetchUsers clips: ${cErr.message}`);
 
-  // Aggregate per hardware_id
+  // Aggregate per hwid
   const clipMap: Record<string, { count: number; earnings: number }> = {};
   for (const c of clipAgg ?? []) {
-    const k = c.user_hardware_id as string;
+    const k = c.hwid as string;
     if (!k) continue;
     if (!clipMap[k]) clipMap[k] = { count: 0, earnings: 0 };
     clipMap[k].count += 1;
-    clipMap[k].earnings += Number(c.estimated_earnings_usd ?? 0);
+    clipMap[k].earnings += Number(c.earnings ?? 0);
   }
 
   return users.map((u) => {
-    const agg = clipMap[u.hardware_id] ?? { count: 0, earnings: 0 };
+    const agg = clipMap[u.hwid] ?? { count: 0, earnings: 0 };
     const licRow = Array.isArray(u.licenses) ? u.licenses[0] : u.licenses;
     return {
-      id:              u.id,
-      hardware_id:     u.hardware_id,
-      license_key:     u.license_key,
-      whop_username:   u.whop_username,
-      social_usernames: u.social_usernames ?? {},
-      created_at:      u.created_at,
-      last_active_at:  u.last_active_at,
-      license_status:  (licRow?.status ?? null) as UserRow["license_status"],
-      clip_count_30d:  agg.count,
-      total_earnings:  agg.earnings,
+      id:             u.id,
+      hwid:           u.hwid,
+      email:          u.email ?? null,
+      license_key:    u.license_key ?? null,
+      status:         u.status ?? null,
+      created_at:     u.created_at,
+      last_active_at: u.last_active_at ?? null,
+      whop_earnings:  u.whop_earnings ?? null,
+      clips_count:    u.clips_count ?? null,
+      license_status: (licRow?.status ?? null) as UserRow["license_status"],
+      clip_count_30d: agg.count,
+      total_earnings: agg.earnings,
     };
   });
 }
@@ -60,12 +62,8 @@ export async function fetchClips(): Promise<ClipRow[]> {
 
   const { data, error } = await db
     .from("clips")
-    .select(
-      "id, user_hardware_id, filename, content_type, duration_sec, score," +
-      " exported_at, published_url, platform, views, estimated_earnings_usd," +
-      " users(whop_username)"
-    )
-    .order("exported_at", { ascending: false });
+    .select("id, hwid, created_at, status, earnings, users(email)")
+    .order("created_at", { ascending: false });
 
   if (error) throw new Error(`fetchClips: ${error.message}`);
 
@@ -73,18 +71,12 @@ export async function fetchClips(): Promise<ClipRow[]> {
   return ((data ?? []) as any[]).map((c) => {
     const uRow = Array.isArray(c.users) ? c.users[0] : c.users;
     return {
-      id:                     c.id as string,
-      user_hardware_id:       c.user_hardware_id as string | null,
-      whop_username:          (uRow as { whop_username: string | null } | null)?.whop_username ?? null,
-      filename:               c.filename as string,
-      content_type:           c.content_type as string,
-      duration_sec:           c.duration_sec as number | null,
-      score:                  c.score as number | null,
-      exported_at:            c.exported_at as string,
-      published_url:          c.published_url as string | null,
-      platform:               c.platform as string | null,
-      views:                  c.views as number | null,
-      estimated_earnings_usd: c.estimated_earnings_usd as number | null,
+      id:         c.id as string,
+      hwid:       c.hwid as string | null,
+      user_email: (uRow as { email: string | null } | null)?.email ?? null,
+      created_at: c.created_at as string,
+      status:     c.status as string | null,
+      earnings:   c.earnings as number | null,
     } satisfies ClipRow;
   });
 }
@@ -110,18 +102,15 @@ export async function fetchEarnings(): Promise<{
 
   const { data: clips, error } = await db
     .from("clips")
-    .select(
-      "user_hardware_id, views, estimated_earnings_usd, published_url, exported_at," +
-      " users(whop_username)"
-    )
-    .not("published_url", "is", null);
+    .select("hwid, earnings, created_at, users(email)")
+    .not("earnings", "is", null);
 
   if (error) throw new Error(`fetchEarnings: ${error.message}`);
 
   // Per-user aggregation
   const userMap: Record<
     string,
-    { username: string | null; views: number; gross: number; published: number }
+    { email: string | null; gross: number; published: number }
   > = {};
 
   // Monthly aggregation (ISO month key "YYYY-MM")
@@ -129,32 +118,29 @@ export async function fetchEarnings(): Promise<{
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const c of ((clips ?? []) as any[])) {
-    const hwid = c.user_hardware_id as string | null;
+    const hwid = c.hwid as string | null;
     if (!hwid) continue;
 
     const uRow = Array.isArray(c.users) ? c.users[0] : c.users;
-    const username = (uRow as { whop_username: string | null } | null)?.whop_username ?? null;
-    const gross = Number(c.estimated_earnings_usd ?? 0);
-    const views = Number(c.views ?? 0);
+    const email = (uRow as { email: string | null } | null)?.email ?? null;
+    const gross = Number(c.earnings ?? 0);
 
     if (!userMap[hwid]) {
-      userMap[hwid] = { username, views: 0, gross: 0, published: 0 };
+      userMap[hwid] = { email, gross: 0, published: 0 };
     }
-    userMap[hwid].views     += views;
     userMap[hwid].gross     += gross;
     userMap[hwid].published += 1;
 
     // Monthly
-    const month = (c.exported_at as string).slice(0, 7); // "YYYY-MM"
+    const month = (c.created_at as string).slice(0, 7); // "YYYY-MM"
     monthMap[month] = (monthMap[month] ?? 0) + gross;
   }
 
   // Build user rows, sorted by gross earnings desc
   const rows: EarningsUserRow[] = Object.entries(userMap)
     .map(([hwid, agg]) => ({
-      hardware_id:    hwid,
-      whop_username:  agg.username,
-      total_views:    agg.views,
+      hwid,
+      user_email:     agg.email,
       gross_earnings: agg.gross,
       user_share:     agg.gross * USER_SHARE,
       admin_share:    agg.gross * ADMIN_SHARE,

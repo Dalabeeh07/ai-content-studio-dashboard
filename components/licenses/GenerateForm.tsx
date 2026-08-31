@@ -101,7 +101,7 @@ export default function GenerateForm() {
             <Label>User Label <span className="normal-case font-normal text-[#3a3a60]">(optional)</span></Label>
             <input
               type="text"
-              name="user_label"
+              name="label"
               maxLength={80}
               placeholder="e.g. Ahmad, VIP User"
               className={inputCls}

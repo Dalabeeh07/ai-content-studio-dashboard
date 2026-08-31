@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -47,7 +47,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="px-5 py-6 border-b border-border">
         <span className="text-brand-blue font-bold text-base leading-none">
-          AI Content Studio
+          Plovika
         </span>
         <span className="block text-muted text-[11px] mt-0.5">Admin Panel</span>
       </div>

@@ -92,9 +92,8 @@ function RevokeDialog({
     }
   }
 
-  const displayName = user.whop_username
-    ? `@${user.whop_username}`
-    : `User #${user.hardware_id.slice(0, 6)}`;
+  const displayName = user.email
+    ?? `User #${user.hwid.slice(0, 6)}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -167,9 +166,7 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
               </tr>
             )}
             {users.map((u) => {
-              const displayName = u.whop_username
-                ? `@${u.whop_username}`
-                : `User #${u.hardware_id.slice(0, 6)}`;
+              const displayName = u.email ?? `User #${u.hwid.slice(0, 6)}`;
               const online = isOnline(u.last_active_at);
 
               return (
@@ -185,8 +182,8 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
                   {/* Device ID */}
                   <td className={TD}>
                     <CopyCell
-                      value={u.hardware_id}
-                      display={u.hardware_id.slice(0, 12) + "…"}
+                      value={u.hwid}
+                      display={u.hwid.slice(0, 12) + "…"}
                     />
                   </td>
 

@@ -108,39 +108,29 @@ export default async function EarningsPage() {
           <table className="w-full border-collapse">
             <thead className="bg-[#0f0f1c] border-b border-[#1e1e38]">
               <tr>
-                <th className={TH}>Username</th>
-                <th className={TH}>Total Views</th>
+                <th className={TH}>User</th>
                 <th className={TH}>Gross Earnings</th>
                 <th className={TH}>Their Share (60%)</th>
                 <th className={TH}>Admin Share (40%)</th>
-                <th className={TH}>Published Clips</th>
+                <th className={TH}>Clips</th>
               </tr>
             </thead>
             <tbody className="bg-[#08080f] divide-y divide-[#1e1e38]">
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-[#7070a0] text-sm">
-                    No published clips with earnings yet
+                  <td colSpan={5} className="px-4 py-12 text-center text-[#7070a0] text-sm">
+                    No clips with earnings yet
                   </td>
                 </tr>
               )}
               {rows.map((r) => {
-                const displayName = r.whop_username
-                  ? `@${r.whop_username}`
-                  : `User #${r.hardware_id.slice(0, 6)}`;
+                const displayName = r.user_email ?? `User #${r.hwid.slice(0, 6)}`;
 
                 return (
-                  <tr key={r.hardware_id} className="hover:bg-[#0f0f1c] transition-colors">
+                  <tr key={r.hwid} className="hover:bg-[#0f0f1c] transition-colors">
                     {/* Username */}
                     <td className={TD}>
                       <span className="text-[#e8e8f0] font-medium">{displayName}</span>
-                    </td>
-
-                    {/* Total views */}
-                    <td className={TD}>
-                      <span className="text-[#e8e8f0] tabular-nums">
-                        {r.total_views.toLocaleString()}
-                      </span>
                     </td>
 
                     {/* Gross */}
@@ -181,9 +171,6 @@ export default async function EarningsPage() {
                 <tr>
                   <td className={`${TD} text-[#7070a0] font-semibold`}>
                     Total ({rows.length} users)
-                  </td>
-                  <td className={`${TD} text-[#e8e8f0] tabular-nums font-semibold`}>
-                    {rows.reduce((s, r) => s + r.total_views, 0).toLocaleString()}
                   </td>
                   <td className={`${TD} text-[#e8e8f0] tabular-nums font-bold`}>
                     ${totals.gross.toFixed(2)}
