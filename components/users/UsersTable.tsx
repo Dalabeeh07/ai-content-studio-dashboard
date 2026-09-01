@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import type { UserRow, LicenseStatus } from "@/lib/types";
+import type { UserRow, LicenseStatus, SocialAccount } from "@/lib/types";
 import SendMessageModal from "./SendMessageModal";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -37,6 +37,37 @@ function LicenseBadge({ status }: { status: LicenseStatus | null }) {
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${cls}`}>
       {status ?? "None"}
     </span>
+  );
+}
+
+const PLATFORM_META: Record<string, { label: string; url: (u: string) => string; color: string }> = {
+  instagram: { label: "IG", url: (u) => `https://instagram.com/${u.replace("@", "")}`, color: "bg-[#e1306c]/20 text-[#e1306c] border-[#e1306c]/30" },
+  tiktok:    { label: "TT", url: (u) => `https://tiktok.com/${u}`,                     color: "bg-[#69c9d0]/20 text-[#69c9d0] border-[#69c9d0]/30" },
+  youtube:   { label: "YT", url: (u) => `https://youtube.com/${u}`,                    color: "bg-[#ff0000]/20 text-[#ff0000] border-[#ff0000]/30" },
+  x:         { label: "X",  url: (u) => `https://x.com/${u.replace("@", "")}`,         color: "bg-[#e8e8f0]/10 text-[#e8e8f0] border-[#e8e8f0]/20" },
+  snapchat:  { label: "SC", url: (u) => `https://snapchat.com/add/${u.replace("@", "")}`, color: "bg-[#fffc00]/10 text-[#e8e000] border-[#fffc00]/20" },
+};
+
+function SocialBadges({ accounts }: { accounts: SocialAccount[] | null }) {
+  if (!accounts || accounts.length === 0) return <span className="text-[#3a3a60]">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {accounts.map((a, i) => {
+        const meta = PLATFORM_META[a.platform] ?? { label: a.platform.toUpperCase().slice(0, 2), url: () => "#", color: "bg-[#3a3a60]/30 text-[#7070a0] border-[#3a3a60]" };
+        return (
+          <a
+            key={i}
+            href={meta.url(a.username)}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`${a.platform}: ${a.username}`}
+            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border ${meta.color} hover:opacity-80 transition-opacity`}
+          >
+            {meta.label}
+          </a>
+        );
+      })}
+    </div>
   );
 }
 
@@ -153,6 +184,7 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
               <th className={TH}>Clips (30d)</th>
               <th className={TH}>Last Active</th>
               <th className={TH}>Whop Earnings</th>
+              <th className={TH}>Social</th>
               <th className={TH}>Status</th>
               <th className={TH}>Actions</th>
             </tr>
@@ -160,7 +192,7 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
           <tbody className="bg-[#08080f] divide-y divide-[#1e1e38]">
             {users.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center text-[#7070a0] text-sm">
+                <td colSpan={9} className="px-4 py-12 text-center text-[#7070a0] text-sm">
                   No users yet
                 </td>
               </tr>
@@ -216,13 +248,18 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
 
                   {/* Earnings */}
                   <td className={TD}>
-                    {u.total_earnings > 0 ? (
+                    {u.whop_earnings != null && u.whop_earnings > 0 ? (
                       <span className="text-brand-mint font-semibold tabular-nums">
-                        ${u.total_earnings.toFixed(2)}
+                        ${u.whop_earnings.toFixed(2)}
                       </span>
                     ) : (
                       <span className="text-[#3a3a60]">—</span>
                     )}
+                  </td>
+
+                  {/* Social accounts */}
+                  <td className={TD}>
+                    <SocialBadges accounts={u.social_accounts} />
                   </td>
 
                   {/* Status */}

@@ -1,5 +1,10 @@
 export type LicenseStatus = "active" | "expired" | "revoked";
 
+export interface SocialAccount {
+  platform: string;
+  username: string;
+}
+
 export interface UserRow {
   id: string;
   hwid: string;
@@ -10,6 +15,7 @@ export interface UserRow {
   last_active_at: string | null;
   whop_earnings: number | null;
   clips_count: number | null;
+  social_accounts: SocialAccount[] | null;
   // joined
   license_status: LicenseStatus | null;
   clip_count_30d: number;

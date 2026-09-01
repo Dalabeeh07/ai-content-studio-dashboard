@@ -45,9 +45,10 @@ export async function fetchUsers(): Promise<UserRow[]> {
       status:         u.status ?? null,
       created_at:     u.created_at,
       last_active_at: u.last_active_at ?? null,
-      whop_earnings:  u.whop_earnings ?? null,
-      clips_count:    u.clips_count ?? null,
-      license_status: (licRow?.status ?? null) as UserRow["license_status"],
+      whop_earnings:    u.whop_earnings ?? null,
+      clips_count:      u.clips_count ?? null,
+      social_accounts:  Array.isArray(u.social_accounts) ? u.social_accounts : null,
+      license_status:   (licRow?.status ?? null) as UserRow["license_status"],
       clip_count_30d: agg.count,
       total_earnings: agg.earnings,
     };
