@@ -1,9 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
 import type { UserRow, LicenseStatus, SocialAccount } from "@/lib/types";
-import SendMessageModal from "./SendMessageModal";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -90,6 +89,77 @@ function CopyCell({ value, display }: { value: string; display?: string }) {
   );
 }
 
+// ── Inline notification form ──────────────────────────────────────────────────
+
+function InlineNotifyForm({ hwid, onClose }: { hwid: string; onClose: () => void }) {
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [sent, setSent] = useState(false);
+
+  async function handleSend() {
+    if (!message.trim()) return;
+    setSending(true);
+    setError("");
+    try {
+      const res = await fetch("/api/notifications/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hwid, body: message.trim() }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Failed to send");
+      }
+      setSent(true);
+      setTimeout(onClose, 3000);
+    } catch {
+      setSending(false);
+      setError("فشل الإرسال، حاول مرة أخرى");
+    }
+  }
+
+  if (sent) {
+    return <p className="text-brand-mint text-sm font-semibold">✓ تم الإرسال</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-2 max-w-lg">
+      <textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="اكتب رسالتك للمستخدم..."
+        rows={3}
+        disabled={sending}
+        className="w-full bg-[#0f0f1c] border border-[#1e1e38] rounded-lg px-3 py-2
+                   text-sm text-[#e8e8f0] placeholder-[#3a3a60] resize-y
+                   focus:outline-none focus:border-brand-blue disabled:opacity-60"
+      />
+      {error && <p className="text-brand-orange text-xs">{error}</p>}
+      <div className="flex gap-2">
+        <button
+          onClick={handleSend}
+          disabled={sending || !message.trim()}
+          className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white
+                     bg-brand-blue hover:bg-[#6aadff] disabled:bg-[#3a3a60]
+                     disabled:cursor-not-allowed transition-colors"
+        >
+          {sending ? "جاري الإرسال..." : "إرسال"}
+        </button>
+        <button
+          onClick={onClose}
+          disabled={sending}
+          className="px-4 py-1.5 rounded-lg text-xs text-[#7070a0]
+                     border border-[#1e1e38] hover:border-[#3a3a60] hover:text-white
+                     disabled:opacity-50 transition-colors"
+        >
+          إلغاء
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Revoke confirm dialog ─────────────────────────────────────────────────────
 
 function RevokeDialog({
@@ -166,7 +236,7 @@ function RevokeDialog({
 // ── Main table ────────────────────────────────────────────────────────────────
 
 export default function UsersTable({ users }: { users: UserRow[] }) {
-  const [msgTarget, setMsgTarget]     = useState<UserRow | null>(null);
+  const [notifyRowId, setNotifyRowId] = useState<string | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<UserRow | null>(null);
 
   const TH = "px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#7070a0]";
@@ -183,7 +253,6 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
               <th className={TH}>License</th>
               <th className={TH}>Clips (30d)</th>
               <th className={TH}>Last Active</th>
-              <th className={TH}>Whop Earnings</th>
               <th className={TH}>Social</th>
               <th className={TH}>Status</th>
               <th className={TH}>Actions</th>
@@ -192,7 +261,7 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
           <tbody className="bg-[#08080f] divide-y divide-[#1e1e38]">
             {users.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-[#7070a0] text-sm">
+                <td colSpan={8} className="px-4 py-12 text-center text-[#7070a0] text-sm">
                   No users yet
                 </td>
               </tr>
@@ -202,8 +271,8 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
               const online = isOnline(u.last_active_at);
 
               return (
+                <Fragment key={u.id}>
                 <tr
-                  key={u.id}
                   className="hover:bg-[#0f0f1c] transition-colors"
                 >
                   {/* User */}
@@ -246,17 +315,6 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
                     </span>
                   </td>
 
-                  {/* Earnings */}
-                  <td className={TD}>
-                    {u.whop_earnings != null && u.whop_earnings > 0 ? (
-                      <span className="text-brand-mint font-semibold tabular-nums">
-                        ${u.whop_earnings.toFixed(2)}
-                      </span>
-                    ) : (
-                      <span className="text-[#3a3a60]">—</span>
-                    )}
-                  </td>
-
                   {/* Social accounts */}
                   <td className={TD}>
                     <SocialBadges accounts={u.social_accounts} />
@@ -278,13 +336,13 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
                   <td className={TD}>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => setMsgTarget(u)}
+                        onClick={() => setNotifyRowId(notifyRowId === u.id ? null : u.id)}
                         className="px-3 py-1 rounded-md text-xs font-medium
                                    bg-[#141428] border border-[#1e1e38]
                                    text-[#4a9eff] hover:border-[#4a9eff] hover:bg-[#0e1e38]
                                    transition-colors"
                       >
-                        Message
+                        إرسال إشعار
                       </button>
                       <button
                         onClick={() => setRevokeTarget(u)}
@@ -300,18 +358,22 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
                     </div>
                   </td>
                 </tr>
+                {notifyRowId === u.id && (
+                  <tr className="bg-[#0f0f1c]">
+                    <td colSpan={8} className="px-4 py-3">
+                      <InlineNotifyForm
+                        hwid={u.hwid}
+                        onClose={() => setNotifyRowId(null)}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
         </table>
       </div>
-
-      {msgTarget && (
-        <SendMessageModal
-          user={msgTarget}
-          onClose={() => setMsgTarget(null)}
-        />
-      )}
 
       {revokeTarget && (
         <RevokeDialog

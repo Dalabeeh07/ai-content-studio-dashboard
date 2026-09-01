@@ -1,5 +1,5 @@
 import { serverClient } from "./supabase";
-import type { ClipRow, EarningsUserRow, MonthlyBar, SummaryStats, UserRow } from "./types";
+import type { ClipRow, EarningsUserRow, MonthlyBar, PendingUser, SummaryStats, UserRow } from "./types";
 
 export async function fetchUsers(): Promise<UserRow[]> {
   const db = serverClient();
@@ -45,7 +45,6 @@ export async function fetchUsers(): Promise<UserRow[]> {
       status:         u.status ?? null,
       created_at:     u.created_at,
       last_active_at: u.last_active_at ?? null,
-      whop_earnings:    u.whop_earnings ?? null,
       clips_count:      u.clips_count ?? null,
       social_accounts:  Array.isArray(u.social_accounts) ? u.social_accounts : null,
       license_status:   (licRow?.status ?? null) as UserRow["license_status"],
@@ -53,6 +52,37 @@ export async function fetchUsers(): Promise<UserRow[]> {
       total_earnings: agg.earnings,
     };
   });
+}
+
+// ── Pending users ─────────────────────────────────────────────────────────────
+
+export async function fetchPendingUsers(): Promise<PendingUser[]> {
+  const db = serverClient();
+  if (!db) return [];
+
+  const { data, error } = await db
+    .from("pending_users")
+    .select(
+      "id, hwid, full_name, whop_username, license_key, social_accounts, " +
+      "gemini_key_hint, status, created_at:registered_at, reviewed_at"
+    )
+    .order("registered_at", { ascending: false });
+
+  if (error) throw new Error(`fetchPendingUsers: ${error.message}`);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return ((data ?? []) as any[]).map((p) => ({
+    id:              p.id as string,
+    hwid:            p.hwid as string,
+    full_name:       p.full_name ?? null,
+    whop_username:   p.whop_username ?? null,
+    license_key:     p.license_key ?? null,
+    social_accounts: Array.isArray(p.social_accounts) ? p.social_accounts : null,
+    gemini_key_hint: p.gemini_key_hint ?? null,
+    status:          p.status as PendingUser["status"],
+    created_at:      p.created_at as string,
+    reviewed_at:     p.reviewed_at ?? null,
+  } satisfies PendingUser));
 }
 
 // ── Clips ─────────────────────────────────────────────────────────────────────

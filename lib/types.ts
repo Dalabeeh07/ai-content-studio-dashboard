@@ -13,13 +13,25 @@ export interface UserRow {
   status: string | null;
   created_at: string;
   last_active_at: string | null;
-  whop_earnings: number | null;
   clips_count: number | null;
   social_accounts: SocialAccount[] | null;
   // joined
   license_status: LicenseStatus | null;
   clip_count_30d: number;
   total_earnings: number;
+}
+
+export interface PendingUser {
+  id: string;
+  hwid: string;
+  full_name: string | null;
+  whop_username: string | null;
+  license_key: string | null;
+  social_accounts: SocialAccount[] | null;
+  gemini_key_hint: string | null;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  reviewed_at: string | null;
 }
 
 export interface ClipRow {

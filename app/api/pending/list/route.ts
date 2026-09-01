@@ -7,7 +7,10 @@ export async function GET() {
 
   const { data, error } = await db
     .from("pending_users")
-    .select("id, email, hwid, status, registered_at, reviewed_at, reject_reason")
+    .select(
+      "id, hwid, full_name, whop_username, license_key, social_accounts, " +
+      "gemini_key_hint, status, created_at:registered_at, reviewed_at"
+    )
     .order("registered_at", { ascending: false })
     .limit(100);
 
