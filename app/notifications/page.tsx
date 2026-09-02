@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 interface NotifRow {
   id: string;
   hwid: string;
-  message: string;
+  body: string;
   created_at: string;
   read: boolean;
   user_label: string;   // derived
@@ -54,12 +54,12 @@ async function fetchPageData() {
   // Notifications ordered newest first
   const { data: notifsRaw } = await db
     .from("notifications")
-    .select("id, hwid, message, created_at, read")
+    .select("id, hwid, body, created_at, read")
     .order("created_at", { ascending: false })
     .limit(100);
 
   const notifs: NotifRow[] = ((notifsRaw ?? []) as {
-    id: string; hwid: string; message: string; created_at: string; read: boolean;
+    id: string; hwid: string; body: string; created_at: string; read: boolean;
   }[]).map((n) => {
     const email = userMap.get(n.hwid);
     const user_label = email ?? `User #${n.hwid.slice(0, 6)}`;
@@ -156,8 +156,8 @@ export default async function NotificationsPage() {
 
                       {/* Message */}
                       <td className={TD}>
-                        <p className="text-[#e8e8f0] text-xs max-w-[260px] truncate" title={n.message}>
-                          {n.message}
+                        <p className="text-[#e8e8f0] text-xs max-w-[260px] truncate" title={n.body}>
+                          {n.body}
                         </p>
                       </td>
 

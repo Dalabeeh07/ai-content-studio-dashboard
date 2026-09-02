@@ -27,7 +27,7 @@ export async function sendNotification(formData: FormData): Promise<{
     }
     const { error } = await db
       .from("notifications")
-      .insert({ hwid, message: message.trim() });
+      .insert({ hwid, body: message.trim() });
     if (error) return { ok: false, error: error.message };
     revalidatePath("/notifications");
     return { ok: true, recipientCount: 1 };
@@ -48,8 +48,8 @@ export async function sendNotification(formData: FormData): Promise<{
   }
 
   const rows = (users as { hwid: string }[]).map((u) => ({
-    hwid:    u.hwid,
-    message: message.trim(),
+    hwid: u.hwid,
+    body: message.trim(),
   }));
 
   const { error: bulkErr } = await db.from("notifications").insert(rows);
