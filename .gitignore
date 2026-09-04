@@ -34,6 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# admin session tokens (disk-backed session store)
+.sessions.json
+
 # vercel
 .vercel
 
