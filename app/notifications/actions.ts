@@ -34,9 +34,11 @@ export async function sendNotification(formData: FormData): Promise<{
   }
 
   // All users
+  // users' real column is hardware_id (see lib/queries.ts fetchUsers for
+  // the same mismatch) - notifications' own hwid column is unaffected.
   const { data: users, error: uErr } = await db
     .from("users")
-    .select("hwid");
+    .select("hardware_id");
 
   if (uErr || !users) {
     return { ok: false, error: uErr?.message ?? "Failed to fetch users." };
@@ -47,8 +49,8 @@ export async function sendNotification(formData: FormData): Promise<{
     return { ok: true, recipientCount: 0 };
   }
 
-  const rows = (users as { hwid: string }[]).map((u) => ({
-    hwid: u.hwid,
+  const rows = (users as { hardware_id: string }[]).map((u) => ({
+    hwid: u.hardware_id,
     body: message.trim(),
   }));
 

@@ -15,7 +15,7 @@ export default function SendMessageModal({ user, onClose }: Props) {
   const [success, setSuccess] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const displayName = user.email ?? `User #${user.hwid.slice(0, 6)}`;
+  const displayName = user.email ?? `User #${user.hwid?.slice(0, 6) ?? "?"}`;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

@@ -194,7 +194,7 @@ function RevokeDialog({
   }
 
   const displayName = user.email
-    ?? `User #${user.hwid.slice(0, 6)}`;
+    ?? `User #${user.hwid?.slice(0, 6) ?? "?"}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -267,7 +267,7 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
               </tr>
             )}
             {users.map((u) => {
-              const displayName = u.email ?? `User #${u.hwid.slice(0, 6)}`;
+              const displayName = u.email ?? `User #${u.hwid?.slice(0, 6) ?? "?"}`;
               const online = isOnline(u.last_active_at);
 
               return (
@@ -283,8 +283,8 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
                   {/* Device ID */}
                   <td className={TD}>
                     <CopyCell
-                      value={u.hwid}
-                      display={u.hwid.slice(0, 12) + "…"}
+                      value={u.hwid ?? ""}
+                      display={u.hwid ? u.hwid.slice(0, 12) + "…" : "—"}
                     />
                   </td>
 

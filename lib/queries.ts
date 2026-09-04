@@ -35,11 +35,15 @@ export async function fetchUsers(): Promise<UserRow[]> {
   }
 
   return users.map((u) => {
-    const agg = clipMap[u.hwid] ?? { count: 0, earnings: 0 };
+    // The users table's real column is hardware_id (confirmed - this is
+    // the same hwid-vs-hardware_id mismatch the deduct_credit RPC had).
+    // UserRow.hwid is this dashboard's own established field name, mapped
+    // here rather than renamed everywhere it's already used downstream.
+    const agg = clipMap[u.hardware_id] ?? { count: 0, earnings: 0 };
     const licRow = Array.isArray(u.licenses) ? u.licenses[0] : u.licenses;
     return {
       id:             u.id,
-      hwid:           u.hwid,
+      hwid:           u.hardware_id,
       email:          u.email ?? null,
       license_key:    u.license_key ?? null,
       status:         u.status ?? null,
