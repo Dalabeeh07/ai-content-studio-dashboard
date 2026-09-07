@@ -1,5 +1,6 @@
 import { serverClient } from "./supabase";
-import type { ClipRow, EarningsUserRow, MonthlyBar, PendingUser, SummaryStats, UserRow } from "./types";
+import { ADMIN_SHARE, USER_SHARE } from "./constants";
+import type { ClipRow, EarningsUserRow, MonthlyBar, PendingUser, SubmissionRow, SummaryStats, UserRow } from "./types";
 
 export async function fetchUsers(): Promise<UserRow[]> {
   const db = serverClient();
@@ -116,10 +117,42 @@ export async function fetchClips(): Promise<ClipRow[]> {
   });
 }
 
-// ── Earnings ──────────────────────────────────────────────────────────────────
+// ── Video submissions (revenue-share) ──────────────────────────────────────────
 
-const USER_SHARE = 0.6;
-const ADMIN_SHARE = 0.4;
+export async function fetchSubmissions(): Promise<SubmissionRow[]> {
+  const db = serverClient();
+  if (!db) return [];
+
+  const { data, error } = await db
+    .from("video_submissions")
+    .select(
+      "id, user_id, hardware_id, platform, video_url, username, status, " +
+      "whop_confirmed, submitted_at, updated_at, users(email)"
+    )
+    .order("submitted_at", { ascending: false });
+
+  if (error) throw new Error(`fetchSubmissions: ${error.message}`);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return ((data ?? []) as any[]).map((s) => {
+    const uRow = Array.isArray(s.users) ? s.users[0] : s.users;
+    return {
+      id:             s.id as string,
+      user_id:        s.user_id as string,
+      hardware_id:    s.hardware_id as string,
+      user_email:     (uRow as { email: string | null } | null)?.email ?? null,
+      platform:       s.platform as SubmissionRow["platform"],
+      video_url:      s.video_url as string,
+      username:       s.username as string,
+      status:         s.status as SubmissionRow["status"],
+      whop_confirmed: Boolean(s.whop_confirmed),
+      submitted_at:   s.submitted_at as string,
+      updated_at:     s.updated_at as string,
+    } satisfies SubmissionRow;
+  });
+}
+
+// ── Earnings ──────────────────────────────────────────────────────────────────
 
 const MONTH_LABELS: Record<string, string> = {
   "01": "Jan", "02": "Feb", "03": "Mar", "04": "Apr",
@@ -130,14 +163,26 @@ const MONTH_LABELS: Record<string, string> = {
 export async function fetchEarnings(): Promise<{
   rows: EarningsUserRow[];
   monthly: MonthlyBar[];
-  totals: { gross: number; userShare: number; adminShare: number };
+  totals: {
+    gross: number;
+    userShare: number;
+    adminShare: number;
+    pendingUserShare: number;
+    paidUserShare: number;
+  };
 }> {
   const db = serverClient();
-  if (!db) return { rows: [], monthly: [], totals: { gross: 0, userShare: 0, adminShare: 0 } };
+  if (!db) {
+    return {
+      rows: [],
+      monthly: [],
+      totals: { gross: 0, userShare: 0, adminShare: 0, pendingUserShare: 0, paidUserShare: 0 },
+    };
+  }
 
   const { data: clips, error } = await db
     .from("clips")
-    .select("hwid, earnings, created_at, users(email)")
+    .select("hwid, earnings, created_at, payout_status, users(email)")
     .not("earnings", "is", null);
 
   if (error) throw new Error(`fetchEarnings: ${error.message}`);
@@ -145,7 +190,7 @@ export async function fetchEarnings(): Promise<{
   // Per-user aggregation
   const userMap: Record<
     string,
-    { email: string | null; gross: number; published: number }
+    { email: string | null; gross: number; pending: number; published: number }
   > = {};
 
   // Monthly aggregation (ISO month key "YYYY-MM")
@@ -159,12 +204,16 @@ export async function fetchEarnings(): Promise<{
     const uRow = Array.isArray(c.users) ? c.users[0] : c.users;
     const email = (uRow as { email: string | null } | null)?.email ?? null;
     const gross = Number(c.earnings ?? 0);
+    // Defensive: treat anything but the literal 'paid' as unpaid, so a row
+    // from before this column existed (null) still counts as pending.
+    const isPaid = c.payout_status === "paid";
 
     if (!userMap[hwid]) {
-      userMap[hwid] = { email, gross: 0, published: 0 };
+      userMap[hwid] = { email, gross: 0, pending: 0, published: 0 };
     }
     userMap[hwid].gross     += gross;
     userMap[hwid].published += 1;
+    if (!isPaid) userMap[hwid].pending += gross;
 
     // Monthly
     const month = (c.created_at as string).slice(0, 7); // "YYYY-MM"
@@ -173,14 +222,20 @@ export async function fetchEarnings(): Promise<{
 
   // Build user rows, sorted by gross earnings desc
   const rows: EarningsUserRow[] = Object.entries(userMap)
-    .map(([hwid, agg]) => ({
-      hwid,
-      user_email:     agg.email,
-      gross_earnings: agg.gross,
-      user_share:     agg.gross * USER_SHARE,
-      admin_share:    agg.gross * ADMIN_SHARE,
-      published_clips: agg.published,
-    }))
+    .map(([hwid, agg]) => {
+      const pendingUserShare = agg.pending * USER_SHARE;
+      return {
+        hwid,
+        user_email:     agg.email,
+        gross_earnings: agg.gross,
+        user_share:     agg.gross * USER_SHARE,
+        admin_share:    agg.gross * ADMIN_SHARE,
+        pending_user_share: pendingUserShare,
+        paid_user_share:    (agg.gross - agg.pending) * USER_SHARE,
+        published_clips: agg.published,
+        fully_paid: pendingUserShare === 0,
+      };
+    })
     .sort((a, b) => b.gross_earnings - a.gross_earnings);
 
   // Build last-6-months bars
@@ -200,6 +255,7 @@ export async function fetchEarnings(): Promise<{
   }
 
   const totalGross = rows.reduce((s, r) => s + r.gross_earnings, 0);
+  const pendingUserShare = rows.reduce((s, r) => s + r.pending_user_share, 0);
   return {
     rows,
     monthly,
@@ -207,6 +263,8 @@ export async function fetchEarnings(): Promise<{
       gross:      totalGross,
       userShare:  totalGross * USER_SHARE,
       adminShare: totalGross * ADMIN_SHARE,
+      pendingUserShare,
+      paidUserShare: rows.reduce((s, r) => s + r.paid_user_share, 0),
     },
   };
 }

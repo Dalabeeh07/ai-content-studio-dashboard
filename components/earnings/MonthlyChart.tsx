@@ -1,4 +1,8 @@
+import { ADMIN_SHARE, USER_SHARE } from "@/lib/constants";
 import type { MonthlyBar } from "@/lib/types";
+
+const USER_PCT  = `${(USER_SHARE * 100).toFixed(1)}%`;
+const ADMIN_PCT = `${(ADMIN_SHARE * 100).toFixed(1)}%`;
 
 const CHART_W  = 560;
 const CHART_H  = 160;
@@ -122,11 +126,11 @@ export default function MonthlyChart({ bars }: { bars: MonthlyBar[] }) {
       <div className="flex gap-5 mt-3">
         <span className="flex items-center gap-1.5 text-xs text-[#7070a0]">
           <span className="w-3 h-3 rounded-sm bg-brand-mint inline-block" />
-          User share (60%)
+          User share ({USER_PCT})
         </span>
         <span className="flex items-center gap-1.5 text-xs text-[#7070a0]">
           <span className="w-3 h-3 rounded-sm bg-brand-yellow inline-block" />
-          Admin share (40%)
+          Admin share ({ADMIN_PCT})
         </span>
       </div>
     </div>
