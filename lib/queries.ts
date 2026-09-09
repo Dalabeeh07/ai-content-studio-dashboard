@@ -36,15 +36,23 @@ export async function fetchUsers(): Promise<UserRow[]> {
   }
 
   return users.map((u) => {
-    // The users table's real column is hardware_id (confirmed - this is
-    // the same hwid-vs-hardware_id mismatch the deduct_credit RPC had).
-    // UserRow.hwid is this dashboard's own established field name, mapped
-    // here rather than renamed everywhere it's already used downstream.
-    const agg = clipMap[u.hardware_id] ?? { count: 0, earnings: 0 };
+    // The users table has BOTH hwid and hardware_id columns, inconsistently
+    // populated - confirmed live via direct REST probes: 406 of 407 real
+    // rows have hwid set and hardware_id null, exactly 1 has the reverse
+    // (see supabase/migrations/013_defensive_hwid_reads.sql for the full
+    // writeup and the matching RPC-side fix). Reading only u.hardware_id
+    // here meant this dashboard showed a blank Device ID and a 0 clip
+    // count for the vast majority of real users - not because they had no
+    // clips, but because the join key itself was wrong. Resolve once,
+    // preferring hwid (the far more populated column) with hardware_id as
+    // fallback for that one legacy row, and use the SAME resolved value
+    // for both the clip-count join below and the row's own hwid field.
+    const resolvedHwid: string | null = u.hwid ?? u.hardware_id ?? null;
+    const agg = (resolvedHwid && clipMap[resolvedHwid]) || { count: 0, earnings: 0 };
     const licRow = Array.isArray(u.licenses) ? u.licenses[0] : u.licenses;
     return {
       id:             u.id,
-      hwid:           u.hardware_id,
+      hwid:           resolvedHwid,
       email:          u.email ?? null,
       license_key:    u.license_key ?? null,
       status:         u.status ?? null,

@@ -452,7 +452,7 @@ export default function UsersTable({ users: initialUsers }: { users: UserRow[] }
                   <tr className="bg-[#0f0f1c]">
                     <td colSpan={10} className="px-4 py-3">
                       <InlineNotifyForm
-                        hwid={u.hwid}
+                        hwid={u.hwid ?? ""}
                         onClose={() => setNotifyRowId(null)}
                       />
                     </td>

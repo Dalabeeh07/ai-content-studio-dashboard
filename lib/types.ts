@@ -7,7 +7,10 @@ export interface SocialAccount {
 
 export interface UserRow {
   id: string;
-  hwid: string;
+  // Resolved from whichever of users.hwid/users.hardware_id is actually
+  // populated (see lib/queries.ts's fetchUsers) - genuinely null only if
+  // a row somehow has neither set.
+  hwid: string | null;
   email: string | null;
   license_key: string | null;
   status: string | null;
