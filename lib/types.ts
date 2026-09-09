@@ -55,7 +55,11 @@ export interface ClipRow {
 }
 
 export type SubmissionPlatform = "youtube" | "instagram" | "tiktok";
-export type SubmissionStatus = "pending_review" | "verified" | "paid" | "disputed";
+// Review/verification lifecycle only - payment itself is tracked on
+// clips.payout_status via the Earnings page, and only there (see
+// supabase/migrations/009_video_submissions.sql for why "paid" was
+// removed from here).
+export type SubmissionStatus = "pending_review" | "verified" | "disputed";
 
 export interface SubmissionRow {
   id: string;

@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 import { serverClient } from "@/lib/supabase";
 import type { SubmissionStatus } from "@/lib/types";
 
-const VALID_STATUSES: SubmissionStatus[] = ["pending_review", "verified", "paid", "disputed"];
+// Review/verification lifecycle only - "paid" was removed from
+// SubmissionStatus entirely (see lib/types.ts); payment is tracked on
+// clips.payout_status via the Earnings page instead.
+const VALID_STATUSES: SubmissionStatus[] = ["pending_review", "verified", "disputed"];
 
 // ── Update status ─────────────────────────────────────────────────────────────
 

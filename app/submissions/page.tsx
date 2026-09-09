@@ -30,6 +30,10 @@ export default async function SubmissionsPage() {
             manually confirmed the matching Whop submission exists — this table does not
             check Whop for you.
           </p>
+          <p className="text-[#3a3a60] text-xs mt-0.5">
+            This page only tracks review status — actual payment happens on the{" "}
+            <a href="/earnings" className="text-brand-blue hover:underline">Earnings</a> page.
+          </p>
           <p className="text-[#3a3a60] text-xs mt-0.5">Last updated: {updatedAt}</p>
         </div>
         <RefreshButton />

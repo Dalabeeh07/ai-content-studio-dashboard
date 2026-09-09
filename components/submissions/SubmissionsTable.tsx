@@ -22,7 +22,6 @@ const PLATFORM_LABELS: Record<string, string> = {
 const STATUS_CFG: Record<SubmissionStatus, { cls: string; label: string }> = {
   pending_review: { cls: "bg-[#3a3a60]/30 text-[#7070a0] border-[#3a3a60]", label: "Pending Review" },
   verified:       { cls: "bg-brand-blue/10 text-brand-blue border-brand-blue/30", label: "Verified" },
-  paid:           { cls: "bg-brand-mint/10 text-brand-mint border-brand-mint/30", label: "Paid" },
   disputed:       { cls: "bg-red-900/20 text-red-400 border-red-800/40", label: "Disputed" },
 };
 
@@ -78,15 +77,6 @@ function RowActions({ row }: { row: SubmissionRow }) {
           Mark Verified
         </button>
       )}
-      {row.status !== "paid" && (
-        <button
-          onClick={() => setStatus("paid")}
-          disabled={pending}
-          className={`${btnBase} bg-[#141428] border-[#1e1e38] text-brand-mint hover:border-brand-mint hover:bg-[#0f2a1a]`}
-        >
-          Mark Paid
-        </button>
-      )}
       {row.status !== "disputed" && (
         <button
           onClick={() => setStatus("disputed")}
@@ -122,7 +112,6 @@ function FilterBar({
     { value: "all", label: `All (${counts.all})` },
     { value: "pending_review", label: `Pending Review (${counts.pending_review})` },
     { value: "verified", label: `Verified (${counts.verified})` },
-    { value: "paid", label: `Paid (${counts.paid})` },
     { value: "disputed", label: `Disputed (${counts.disputed})` },
   ];
   return (
@@ -148,7 +137,6 @@ export default function SubmissionsTable({ submissions }: { submissions: Submiss
     all: submissions.length,
     pending_review: submissions.filter((s) => s.status === "pending_review").length,
     verified: submissions.filter((s) => s.status === "verified").length,
-    paid: submissions.filter((s) => s.status === "paid").length,
     disputed: submissions.filter((s) => s.status === "disputed").length,
   }), [submissions]);
 
