@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Fragment, useState, useTransition } from "react";
+import { Fragment, useEffect, useState, useTransition } from "react";
+import { browserClient } from "@/lib/supabase";
 import type { UserRow, LicenseStatus, SocialAccount } from "@/lib/types";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -18,9 +19,16 @@ function relativeTime(iso: string | null): string {
   return `${d}d ago`;
 }
 
+// ~2-minute online window (migration 011): the desktop app heartbeats
+// every ~75s while running, so anything fresher than 2 minutes means a
+// heartbeat is very likely still landing on schedule - not just "seen
+// sometime in the last hour" as this used to mean back when last_active_at
+// was only touched every 30 minutes by the older sync cycle.
+const ONLINE_WINDOW_MS = 2 * 60 * 1000;
+
 function isOnline(iso: string | null): boolean {
   if (!iso) return false;
-  return Date.now() - new Date(iso).getTime() < 60 * 60 * 1000;
+  return Date.now() - new Date(iso).getTime() < ONLINE_WINDOW_MS;
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -235,9 +243,69 @@ function RevokeDialog({
 
 // ── Main table ────────────────────────────────────────────────────────────────
 
-export default function UsersTable({ users }: { users: UserRow[] }) {
+export default function UsersTable({ users: initialUsers }: { users: UserRow[] }) {
+  const [users, setUsers] = useState<UserRow[]>(initialUsers);
   const [notifyRowId, setNotifyRowId] = useState<string | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<UserRow | null>(null);
+  // Bumped every 30s purely to force relative-time/online labels to
+  // re-evaluate against the current clock even when no row has actually
+  // changed - otherwise "Online" would only flip to "5m ago" the next time
+  // a Realtime event happens to arrive, not as time genuinely passes.
+  const [, setClockTick] = useState(0);
+
+  // New data from the server (e.g. after RefreshButton's router.refresh()
+  // re-renders the parent Server Component with a fresh array) should
+  // replace local state, not be shadowed by whatever Realtime has
+  // accumulated since the last full fetch. Adjusting state during render
+  // (guarded by a ref comparison) rather than in an effect - the pattern
+  // React itself recommends for "reset state when a prop changes"; doing
+  // this in a useEffect would cause an extra render on every mount/update.
+  const [lastSeenInitialUsers, setLastSeenInitialUsers] = useState(initialUsers);
+  if (initialUsers !== lastSeenInitialUsers) {
+    setLastSeenInitialUsers(initialUsers);
+    setUsers(initialUsers);
+  }
+
+  useEffect(() => {
+    const interval = setInterval(() => setClockTick((t) => t + 1), 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Live updates (migration 011): videos_analyzed_count/last_analysis_at,
+  // exports_count/last_export_at, and last_active_at (heartbeat) all land
+  // as UPDATEs on `users` - subscribe instead of polling. Realtime must be
+  // enabled on this table (see migration 011's ALTER PUBLICATION step).
+  useEffect(() => {
+    const channel = browserClient
+      .channel("users-activity")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "users" },
+        (payload) => {
+          const updated = payload.new as Record<string, unknown>;
+          setUsers((prev) =>
+            prev.map((u) =>
+              u.id === updated.id
+                ? {
+                    ...u,
+                    last_active_at: (updated.last_active_at as string | null) ?? u.last_active_at,
+                    videos_analyzed_count:
+                      (updated.videos_analyzed_count as number | null) ?? u.videos_analyzed_count,
+                    last_analysis_at: (updated.last_analysis_at as string | null) ?? u.last_analysis_at,
+                    exports_count: (updated.exports_count as number | null) ?? u.exports_count,
+                    last_export_at: (updated.last_export_at as string | null) ?? u.last_export_at,
+                  }
+                : u
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      browserClient.removeChannel(channel);
+    };
+  }, []);
 
   const TH = "px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#7070a0]";
   const TD = "px-4 py-3 text-sm align-middle";
@@ -251,6 +319,8 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
               <th className={TH}>User</th>
               <th className={TH}>Device ID</th>
               <th className={TH}>License</th>
+              <th className={TH}>Analyzed</th>
+              <th className={TH}>Exports</th>
               <th className={TH}>Clips (30d)</th>
               <th className={TH}>Last Active</th>
               <th className={TH}>Social</th>
@@ -261,7 +331,7 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
           <tbody className="bg-[#08080f] divide-y divide-[#1e1e38]">
             {users.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center text-[#7070a0] text-sm">
+                <td colSpan={10} className="px-4 py-12 text-center text-[#7070a0] text-sm">
                   No users yet
                 </td>
               </tr>
@@ -298,6 +368,26 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
                         />
                       )}
                       <LicenseBadge status={u.license_status} />
+                    </div>
+                  </td>
+
+                  {/* Videos analyzed (lifetime, live) */}
+                  <td className={TD}>
+                    <div className="flex flex-col">
+                      <span className={(u.videos_analyzed_count ?? 0) > 0 ? "text-[#e8e8f0]" : "text-[#3a3a60]"}>
+                        {u.videos_analyzed_count ?? 0}
+                      </span>
+                      <span className="text-[11px] text-[#3a3a60]">{relativeTime(u.last_analysis_at)}</span>
+                    </div>
+                  </td>
+
+                  {/* Exports (lifetime, live) */}
+                  <td className={TD}>
+                    <div className="flex flex-col">
+                      <span className={(u.exports_count ?? 0) > 0 ? "text-[#e8e8f0]" : "text-[#3a3a60]"}>
+                        {u.exports_count ?? 0}
+                      </span>
+                      <span className="text-[11px] text-[#3a3a60]">{relativeTime(u.last_export_at)}</span>
                     </div>
                   </td>
 
@@ -360,7 +450,7 @@ export default function UsersTable({ users }: { users: UserRow[] }) {
                 </tr>
                 {notifyRowId === u.id && (
                   <tr className="bg-[#0f0f1c]">
-                    <td colSpan={8} className="px-4 py-3">
+                    <td colSpan={10} className="px-4 py-3">
                       <InlineNotifyForm
                         hwid={u.hwid}
                         onClose={() => setNotifyRowId(null)}

@@ -14,6 +14,14 @@ export interface UserRow {
   created_at: string;
   last_active_at: string | null;
   clips_count: number | null;
+  // Live activity tracking (migration 011) - videos_analyzed_count/
+  // exports_count are lifetime counters bumped directly by the desktop app
+  // at the moment an analysis/export completes; last_active_at above is
+  // reused (not new) for the ~75s heartbeat.
+  videos_analyzed_count: number | null;
+  last_analysis_at: string | null;
+  exports_count: number | null;
+  last_export_at: string | null;
   social_accounts: SocialAccount[] | null;
   // joined
   license_status: LicenseStatus | null;
