@@ -26,9 +26,17 @@ function relativeTime(iso: string | null): string {
 // was only touched every 30 minutes by the older sync cycle.
 const ONLINE_WINDOW_MS = 2 * 60 * 1000;
 
-function isOnline(iso: string | null): boolean {
-  if (!iso) return false;
-  return Date.now() - new Date(iso).getTime() < ONLINE_WINDOW_MS;
+// last_explicit_close_at (migration 017) is set only by a deliberate app
+// close, never by the heartbeat. If it's newer than the last heartbeat,
+// the user genuinely quit and should show Inactive immediately, even
+// though last_active_at is still technically "recent" - the 2-minute
+// window above stays the fallback for a crash/force-quit, which never
+// gets a chance to set this at all.
+function isOnline(lastActiveAt: string | null, lastExplicitCloseAt: string | null): boolean {
+  if (!lastActiveAt) return false;
+  if (Date.now() - new Date(lastActiveAt).getTime() >= ONLINE_WINDOW_MS) return false;
+  if (lastExplicitCloseAt && new Date(lastExplicitCloseAt) >= new Date(lastActiveAt)) return false;
+  return true;
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -294,6 +302,8 @@ export default function UsersTable({ users: initialUsers }: { users: UserRow[] }
                     last_analysis_at: (updated.last_analysis_at as string | null) ?? u.last_analysis_at,
                     exports_count: (updated.exports_count as number | null) ?? u.exports_count,
                     last_export_at: (updated.last_export_at as string | null) ?? u.last_export_at,
+                    last_explicit_close_at:
+                      (updated.last_explicit_close_at as string | null) ?? u.last_explicit_close_at,
                   }
                 : u
             )
@@ -338,7 +348,7 @@ export default function UsersTable({ users: initialUsers }: { users: UserRow[] }
             )}
             {users.map((u) => {
               const displayName = u.email ?? `User #${u.hwid?.slice(0, 6) ?? "?"}`;
-              const online = isOnline(u.last_active_at);
+              const online = isOnline(u.last_active_at, u.last_explicit_close_at);
 
               return (
                 <Fragment key={u.id}>

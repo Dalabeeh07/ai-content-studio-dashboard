@@ -25,6 +25,13 @@ export interface UserRow {
   last_analysis_at: string | null;
   exports_count: number | null;
   last_export_at: string | null;
+  // Set only by a deliberate app close (migration 017's mark_offline RPC),
+  // never by the heartbeat - lets isOnline() in UsersTable.tsx show
+  // Inactive within seconds of a real quit instead of waiting out the
+  // 2-minute heartbeat timeout. Stays stale (harmless) after a crash or
+  // force-quit, since there's no closeEvent to call mark_offline from -
+  // the 2-minute timeout is still what covers that case.
+  last_explicit_close_at: string | null;
   social_accounts: SocialAccount[] | null;
   // joined
   license_status: LicenseStatus | null;
