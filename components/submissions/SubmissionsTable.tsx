@@ -1,7 +1,11 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { updateSubmissionStatus, setWhopConfirmed } from "@/app/submissions/actions";
+import { browserClient } from "@/lib/supabase";
+import { useCopyToClipboard } from "@/components/CopyCell";
+import { ToastStack, useToasts } from "@/components/Toast";
+import { playNotificationChime, unlockAudioOnNextInteraction, useSoundMuted } from "@/lib/sound";
 import type { SubmissionRow, SubmissionStatus } from "@/lib/types";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -31,6 +35,39 @@ function StatusBadge({ status }: { status: SubmissionStatus }) {
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${cls}`}>
       {label}
     </span>
+  );
+}
+
+// ── Link cell: openable link + a dedicated copy button ──────────────────────
+
+function LinkCell({ url }: { url: string }) {
+  const [state, copy] = useCopyToClipboard();
+  const truncated = url.length > 40 ? `${url.slice(0, 40)}…` : url;
+  return (
+    <div className="flex items-center gap-1.5">
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-brand-blue hover:underline text-xs break-all"
+        title={url}
+      >
+        {truncated}
+      </a>
+      <button
+        onClick={() => copy(url)}
+        title="Copy link"
+        className={`shrink-0 text-[10px] leading-none px-1.5 py-1 rounded border transition-colors
+          ${state === "copied"
+            ? "border-brand-mint/40 text-brand-mint"
+            : state === "failed"
+            ? "border-brand-orange/40 text-brand-orange"
+            : "border-[#1e1e38] text-[#7070a0] hover:border-brand-blue hover:text-brand-blue"
+          }`}
+      >
+        {state === "copied" ? "✓" : state === "failed" ? "✗" : "⧉"}
+      </button>
+    </div>
   );
 }
 
@@ -128,10 +165,166 @@ function FilterBar({
   );
 }
 
+// ── Sound mute toggle ────────────────────────────────────────────────────────
+
+function SoundToggle({ muted, onToggle }: { muted: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      title={muted ? "Unmute new-submission sound" : "Mute new-submission sound"}
+      className="px-2.5 py-1.5 rounded-lg text-sm border border-[#1e1e38] text-[#7070a0]
+                 hover:border-brand-blue hover:text-brand-blue transition-colors"
+    >
+      {muted ? "🔇" : "🔊"}
+    </button>
+  );
+}
+
+// ── Realtime payload -> SubmissionRow ────────────────────────────────────────
+
+// Only the columns migration 024 grants anon SELECT on (and that the
+// client's `select` filter below explicitly asks for) ever arrive here -
+// user_id and updated_at are deliberately never requested (see that
+// migration's header), so they're filled with inert placeholders rather
+// than left undefined. Neither is read anywhere in this file's rendering
+// - user_email (which WOULD come from user_id via a join) already has its
+// own "User #<hwid prefix>" fallback below for exactly this case.
+interface RealtimeSubmissionInsert {
+  id: string;
+  hardware_id: string;
+  platform: SubmissionRow["platform"];
+  video_url: string;
+  username: string;
+  status: SubmissionStatus;
+  whop_confirmed: boolean;
+  submitted_at: string;
+}
+
+function fromRealtimeInsert(row: RealtimeSubmissionInsert): SubmissionRow {
+  return {
+    id: row.id,
+    user_id: "",
+    hardware_id: row.hardware_id,
+    user_email: null,
+    platform: row.platform,
+    video_url: row.video_url,
+    username: row.username,
+    status: row.status,
+    whop_confirmed: Boolean(row.whop_confirmed),
+    submitted_at: row.submitted_at,
+    updated_at: row.submitted_at,
+  };
+}
+
 // ── Main table ────────────────────────────────────────────────────────────────
 
-export default function SubmissionsTable({ submissions }: { submissions: SubmissionRow[] }) {
+export default function SubmissionsTable({ submissions: initialSubmissions }: { submissions: SubmissionRow[] }) {
   const [filter, setFilter] = useState("all");
+  const [submissions, setSubmissions] = useState<SubmissionRow[]>(initialSubmissions);
+  const [newRowIds, setNewRowIds] = useState<Set<string>>(new Set());
+  const [muted, toggleMuted] = useSoundMuted();
+  // Realtime's subscription effect below runs once (empty deps) and its
+  // callback closure would otherwise capture whatever `muted` was at
+  // that moment forever - this ref is kept current via its own effect
+  // (never written during render) so the callback always sees the latest
+  // value without needing to resubscribe the channel on every toggle.
+  const mutedRef = useRef(muted);
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
+
+  const { toasts, push, dismiss } = useToasts();
+
+  // New data from the server (RefreshButton's router.refresh()) should
+  // replace local state outright, not be shadowed by whatever Realtime
+  // has accumulated since - same "adjust state during render" pattern as
+  // UsersTable.tsx, for the same reason (avoids an extra render vs. doing
+  // this in a useEffect).
+  const [lastSeenInitial, setLastSeenInitial] = useState(initialSubmissions);
+  if (initialSubmissions !== lastSeenInitial) {
+    setLastSeenInitial(initialSubmissions);
+    setSubmissions(initialSubmissions);
+  }
+
+  useEffect(() => {
+    unlockAudioOnNextInteraction();
+  }, []);
+
+  // Browser notification permission: ask once, on load, only while the
+  // browser hasn't been asked before ("default"). Once answered, the
+  // permission is no longer "default" on future visits, so this can run
+  // unconditionally on every mount without ever re-prompting - the
+  // browser itself is what makes this non-intrusive, not extra state here.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  // Live INSERTs (migration 024): `select` restricts the payload to
+  // exactly the columns anon has been granted - without it, Realtime
+  // would send the row's full column set by default regardless of the
+  // DB-side GRANT (verified directly against @supabase/realtime-js's own
+  // types and a real live test - see migration 024's header for details).
+  useEffect(() => {
+    const channel = browserClient
+      .channel("submissions-live")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "video_submissions",
+          select: [
+            "id", "hardware_id", "platform", "video_url",
+            "username", "status", "submitted_at", "whop_confirmed",
+          ],
+        },
+        (payload) => {
+          const inserted = fromRealtimeInsert(payload.new as RealtimeSubmissionInsert);
+
+          setSubmissions((prev) =>
+            prev.some((s) => s.id === inserted.id) ? prev : [inserted, ...prev]
+          );
+
+          setNewRowIds((prev) => new Set(prev).add(inserted.id));
+          setTimeout(() => {
+            setNewRowIds((prev) => {
+              const next = new Set(prev);
+              next.delete(inserted.id);
+              return next;
+            });
+          }, 2500);
+
+          const platformLabel = PLATFORM_LABELS[inserted.platform] ?? inserted.platform;
+          push(`New submission: @${inserted.username} (${platformLabel})`, "success");
+
+          if (!mutedRef.current) playNotificationChime();
+
+          if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+            try {
+              const n = new Notification("New video submission", {
+                body: `@${inserted.username} submitted a ${platformLabel} link`,
+                tag: `submission-${inserted.id}`,
+              });
+              n.onclick = () => {
+                window.focus();
+                n.close();
+              };
+            } catch {
+              // Notification constructor can throw in some environments -
+              // the in-page toast above already covers this either way.
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      browserClient.removeChannel(channel);
+    };
+  }, [push]);
 
   const counts = useMemo(() => ({
     all: submissions.length,
@@ -150,8 +343,11 @@ export default function SubmissionsTable({ submissions }: { submissions: Submiss
 
   return (
     <div className="flex flex-col gap-4">
+      <ToastStack toasts={toasts} onDismiss={dismiss} />
+
       <div className="flex items-center gap-3">
         <FilterBar filter={filter} setFilter={setFilter} counts={counts} />
+        <SoundToggle muted={muted} onToggle={() => toggleMuted(!muted)} />
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-[#1e1e38]">
@@ -178,7 +374,10 @@ export default function SubmissionsTable({ submissions }: { submissions: Submiss
             {filtered.map((s) => {
               const displayUser = s.user_email ?? `User #${s.hardware_id.slice(0, 6)}`;
               return (
-                <tr key={s.id} className="hover:bg-[#0f0f1c] transition-colors">
+                <tr
+                  key={s.id}
+                  className={`hover:bg-[#0f0f1c] transition-colors ${newRowIds.has(s.id) ? "animate-row-flash" : ""}`}
+                >
                   <td className={TD}>
                     <span className="text-[#e8e8f0] text-xs">{displayUser}</span>
                   </td>
@@ -188,15 +387,7 @@ export default function SubmissionsTable({ submissions }: { submissions: Submiss
                     </span>
                   </td>
                   <td className={TD}>
-                    <a
-                      href={s.video_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-brand-blue hover:underline text-xs break-all"
-                      title={s.video_url}
-                    >
-                      {s.video_url.length > 40 ? `${s.video_url.slice(0, 40)}…` : s.video_url}
-                    </a>
+                    <LinkCell url={s.video_url} />
                   </td>
                   <td className={TD}>
                     <span className="text-[#e8e8f0] text-xs">@{s.username}</span>

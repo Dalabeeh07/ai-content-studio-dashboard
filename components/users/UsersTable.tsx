@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useState, useTransition } from "react";
 import { browserClient } from "@/lib/supabase";
-import type { UserRow, LicenseStatus, SocialAccount } from "@/lib/types";
+import { CopyCell } from "@/components/CopyCell";
+import { assignCampaign, updateDailyLimit, grantDailyBonus } from "@/app/users/actions";
+import type { UserRow, LicenseStatus, SocialAccount, Campaign } from "@/lib/types";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -83,25 +85,6 @@ function SocialBadges({ accounts }: { accounts: SocialAccount[] | null }) {
         );
       })}
     </div>
-  );
-}
-
-function CopyCell({ value, display }: { value: string; display?: string }) {
-  const [copied, setCopied] = useState(false);
-  function copy() {
-    navigator.clipboard.writeText(value).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }
-  return (
-    <button
-      onClick={copy}
-      title="Click to copy"
-      className="font-mono text-xs text-[#7070a0] hover:text-brand-blue transition-colors"
-    >
-      {copied ? "✓ copied" : (display ?? value)}
-    </button>
   );
 }
 
@@ -249,9 +232,161 @@ function RevokeDialog({
   );
 }
 
+// ── Campaign assignment (migration 027) ─────────────────────────────────────
+
+function CampaignCell({
+  userId,
+  currentCampaignId,
+  campaigns,
+}: {
+  userId: string;
+  currentCampaignId: string | null;
+  campaigns: Campaign[];
+}) {
+  const [pending, startTransition] = useTransition();
+  const [value, setValue] = useState(currentCampaignId ?? "");
+  const [err, setErr] = useState("");
+
+  function handleChange(next: string) {
+    setValue(next);
+    setErr("");
+    startTransition(async () => {
+      const r = await assignCampaign(userId, next || null);
+      if (!r.ok) setErr(r.error ?? "Failed");
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <select
+        value={value}
+        disabled={pending}
+        onChange={(e) => handleChange(e.target.value)}
+        className="bg-[#0f0f1c] border border-[#1e1e38] rounded px-2 py-1 text-xs
+                   text-[#e8e8f0] focus:outline-none focus:border-brand-blue disabled:opacity-50"
+      >
+        <option value="">No campaign</option>
+        {campaigns.map((c) => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </select>
+      {err && <span className="text-brand-orange text-[10px]">{err}</span>}
+    </div>
+  );
+}
+
+// ── Daily export limit (migration 027) ───────────────────────────────────────
+
+function DailyLimitCell({ user }: { user: UserRow }) {
+  const [editingLimit, setEditingLimit] = useState(false);
+  const [limitValue, setLimitValue] = useState(user.daily_limit);
+  const [bonusInput, setBonusInput] = useState(false);
+  const [bonusValue, setBonusValue] = useState(1);
+  const [pending, startTransition] = useTransition();
+  const [err, setErr] = useState("");
+
+  function saveLimit() {
+    setErr("");
+    startTransition(async () => {
+      const r = await updateDailyLimit(user.id, limitValue);
+      if (r.ok) setEditingLimit(false);
+      else setErr(r.error ?? "Failed");
+    });
+  }
+
+  function saveBonus() {
+    setErr("");
+    startTransition(async () => {
+      const r = await grantDailyBonus(user.id, bonusValue);
+      if (r.ok) setBonusInput(false);
+      else setErr(r.error ?? "Failed");
+    });
+  }
+
+  const effectiveCap = user.daily_limit + user.daily_bonus;
+
+  return (
+    <div className="flex flex-col gap-1">
+      {!editingLimit ? (
+        <button
+          onClick={() => setEditingLimit(true)}
+          className="text-xs text-[#e8e8f0] hover:text-brand-blue transition-colors group text-left"
+        >
+          {user.daily_limit === 0 ? (
+            <span className="text-[#3a3a60]">Not set</span>
+          ) : (
+            <span>
+              {user.daily_used}/{effectiveCap}
+              {user.daily_bonus > 0 && (
+                <span className="text-brand-mint"> (+{user.daily_bonus})</span>
+              )}
+              {" "}today
+            </span>
+          )}
+          <span className="ml-1 text-[#3a3a60] group-hover:text-brand-blue">✎</span>
+        </button>
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number"
+            value={limitValue}
+            onChange={(e) => setLimitValue(Number(e.target.value))}
+            min={0}
+            max={1000}
+            autoFocus
+            className="w-16 bg-[#0f0f1c] border border-brand-blue rounded px-2 py-0.5 text-xs
+                       text-[#e8e8f0] focus:outline-none"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveLimit();
+              if (e.key === "Escape") setEditingLimit(false);
+            }}
+          />
+          <button onClick={saveLimit} disabled={pending} className="text-xs text-brand-mint hover:opacity-80 disabled:opacity-40">✓</button>
+          <button onClick={() => { setEditingLimit(false); setLimitValue(user.daily_limit); }} className="text-xs text-[#7070a0] hover:text-brand-orange">✕</button>
+        </div>
+      )}
+
+      {!bonusInput ? (
+        <button
+          onClick={() => setBonusInput(true)}
+          className="text-[10px] text-[#3a3a60] hover:text-brand-mint text-left"
+        >
+          + one-time bonus today
+        </button>
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number"
+            value={bonusValue}
+            onChange={(e) => setBonusValue(Number(e.target.value))}
+            min={1}
+            max={100}
+            autoFocus
+            className="w-14 bg-[#0f0f1c] border border-brand-mint rounded px-2 py-0.5 text-xs
+                       text-[#e8e8f0] focus:outline-none"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveBonus();
+              if (e.key === "Escape") setBonusInput(false);
+            }}
+          />
+          <button onClick={saveBonus} disabled={pending} className="text-xs text-brand-mint hover:opacity-80 disabled:opacity-40">✓</button>
+          <button onClick={() => setBonusInput(false)} className="text-xs text-[#7070a0] hover:text-brand-orange">✕</button>
+        </div>
+      )}
+      {err && <span className="text-brand-orange text-[10px]">{err}</span>}
+    </div>
+  );
+}
+
 // ── Main table ────────────────────────────────────────────────────────────────
 
-export default function UsersTable({ users: initialUsers }: { users: UserRow[] }) {
+export default function UsersTable({
+  users: initialUsers,
+  campaigns = [],
+}: {
+  users: UserRow[];
+  campaigns?: Campaign[];
+}) {
   const [users, setUsers] = useState<UserRow[]>(initialUsers);
   const [notifyRowId, setNotifyRowId] = useState<string | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<UserRow | null>(null);
@@ -283,12 +418,38 @@ export default function UsersTable({ users: initialUsers }: { users: UserRow[] }
   // exports_count/last_export_at, and last_active_at (heartbeat) all land
   // as UPDATEs on `users` - subscribe instead of polling. Realtime must be
   // enabled on this table (see migration 011's ALTER PUBLICATION step).
+  //
+  // `select` (migration 025): without it, Realtime sends the full row by
+  // default regardless of column-level grants - and anon only has SELECT
+  // on the columns named here (plus hwid/hardware_id, used elsewhere, not
+  // needed by this specific handler) in the first place, so naming them
+  // explicitly is what actually gets them into the payload rather than
+  // the previously-empty one this project shipped with (migration 015
+  // promised this grant, but never actually added it - see 025's header
+  // for the real anon-key probe that caught it). `id` has to be listed
+  // too: it's the row-identity key this handler matches on
+  // (`u.id === updated.id`), and anon never had SELECT on it either -
+  // without it, even a correctly-populated payload for the other six
+  // columns would still fail to match any local row.
+  // last_explicit_close_at (migration 017) is deliberately NOT requested
+  // here - it was never part of migration 015's promised grant and stays
+  // out of scope for this fix, so it keeps falling back to whatever
+  // last_explicit_close_at value the initial server-rendered fetch had
+  // until a future migration/task decides to grant it too.
   useEffect(() => {
     const channel = browserClient
       .channel("users-activity")
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "users" },
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "users",
+          select: [
+            "id", "videos_analyzed_count", "exports_count",
+            "last_analysis_at", "last_export_at", "last_active_at", "status",
+          ],
+        },
         (payload) => {
           const updated = payload.new as Record<string, unknown>;
           setUsers((prev) =>
@@ -334,6 +495,8 @@ export default function UsersTable({ users: initialUsers }: { users: UserRow[] }
               <th className={TH}>Clips (30d)</th>
               <th className={TH}>Last Active</th>
               <th className={TH}>Social</th>
+              <th className={TH}>Campaign</th>
+              <th className={TH}>Daily Limit</th>
               <th className={TH}>Status</th>
               <th className={TH}>Actions</th>
             </tr>
@@ -341,7 +504,7 @@ export default function UsersTable({ users: initialUsers }: { users: UserRow[] }
           <tbody className="bg-[#08080f] divide-y divide-[#1e1e38]">
             {users.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-12 text-center text-[#7070a0] text-sm">
+                <td colSpan={12} className="px-4 py-12 text-center text-[#7070a0] text-sm">
                   No users yet
                 </td>
               </tr>
@@ -420,6 +583,16 @@ export default function UsersTable({ users: initialUsers }: { users: UserRow[] }
                     <SocialBadges accounts={u.social_accounts} />
                   </td>
 
+                  {/* Campaign assignment (migration 027) */}
+                  <td className={TD}>
+                    <CampaignCell userId={u.id} currentCampaignId={u.campaign_id} campaigns={campaigns} />
+                  </td>
+
+                  {/* Daily export limit (migration 027) */}
+                  <td className={TD}>
+                    <DailyLimitCell user={u} />
+                  </td>
+
                   {/* Status */}
                   <td className={TD}>
                     <span className="inline-flex items-center gap-1.5">
@@ -460,7 +633,7 @@ export default function UsersTable({ users: initialUsers }: { users: UserRow[] }
                 </tr>
                 {notifyRowId === u.id && (
                   <tr className="bg-[#0f0f1c]">
-                    <td colSpan={10} className="px-4 py-3">
+                    <td colSpan={12} className="px-4 py-3">
                       <InlineNotifyForm
                         hwid={u.hwid ?? ""}
                         onClose={() => setNotifyRowId(null)}

@@ -1,6 +1,9 @@
 import { serverClient } from "./supabase";
 import { ADMIN_SHARE, USER_SHARE } from "./constants";
-import type { ClipRow, EarningsUserRow, MonthlyBar, PendingUser, SubmissionRow, SummaryStats, UserRow } from "./types";
+import type {
+  Campaign, CampaignHook, ClipRow, EarningsUserRow, MonthlyBar,
+  PendingUser, SubmissionRow, SummaryStats, UserRow,
+} from "./types";
 
 export async function fetchUsers(): Promise<UserRow[]> {
   const db = serverClient();
@@ -65,6 +68,11 @@ export async function fetchUsers(): Promise<UserRow[]> {
       last_export_at:        u.last_export_at ?? null,
       last_explicit_close_at: u.last_explicit_close_at ?? null,
       social_accounts:  Array.isArray(u.social_accounts) ? u.social_accounts : null,
+      campaign_id:    u.campaign_id ?? null,
+      daily_limit:    u.daily_limit ?? 0,
+      daily_used:     u.daily_used ?? 0,
+      daily_bonus:    u.daily_bonus ?? 0,
+      daily_reset_at: u.daily_reset_at,
       license_status:   (licRow?.status ?? null) as UserRow["license_status"],
       clip_count_30d: agg.count,
       total_earnings: agg.earnings,
@@ -304,4 +312,84 @@ export async function fetchSummary(users: UserRow[]): Promise<SummaryStats> {
     total_clips:    totalClips ?? 0,
     total_earnings: totalEarnings,
   };
+}
+
+// ── Campaign-based automatic hooks (migration 027) ──────────────────────────
+
+export async function fetchCampaigns(): Promise<Campaign[]> {
+  const db = serverClient();
+  if (!db) return [];
+
+  const { data: campaigns, error: cErr } = await db
+    .from("campaigns")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (cErr) throw new Error(`fetchCampaigns: ${cErr.message}`);
+  if (!campaigns) return [];
+
+  const { data: hooks, error: hErr } = await db
+    .from("campaign_hooks")
+    .select("campaign_id, status");
+  if (hErr) throw new Error(`fetchCampaigns hooks: ${hErr.message}`);
+
+  const { data: assignees, error: aErr } = await db
+    .from("users")
+    .select("campaign_id")
+    .not("campaign_id", "is", null);
+  if (aErr) throw new Error(`fetchCampaigns assignees: ${aErr.message}`);
+
+  const poolAgg: Record<string, { total: number; available: number; claimed: number }> = {};
+  for (const h of hooks ?? []) {
+    const k = h.campaign_id as string;
+    if (!poolAgg[k]) poolAgg[k] = { total: 0, available: 0, claimed: 0 };
+    poolAgg[k].total += 1;
+    if (h.status === "available") poolAgg[k].available += 1;
+    if (h.status === "claimed") poolAgg[k].claimed += 1;
+  }
+  const assigneeCount: Record<string, number> = {};
+  for (const a of assignees ?? []) {
+    const k = a.campaign_id as string;
+    assigneeCount[k] = (assigneeCount[k] ?? 0) + 1;
+  }
+
+  return campaigns.map((c) => {
+    const pool = poolAgg[c.id] ?? { total: 0, available: 0, claimed: 0 };
+    return {
+      id: c.id,
+      name: c.name,
+      created_at: c.created_at,
+      total_hooks: pool.total,
+      available_hooks: pool.available,
+      claimed_hooks: pool.claimed,
+      assigned_user_count: assigneeCount[c.id] ?? 0,
+    };
+  });
+}
+
+export async function fetchCampaignHooks(campaignId: string): Promise<CampaignHook[]> {
+  const db = serverClient();
+  if (!db) return [];
+
+  const { data, error } = await db
+    .from("campaign_hooks")
+    .select("*, claimed_user:users!campaign_hooks_claimed_by_user_id_fkey(email)")
+    .eq("campaign_id", campaignId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`fetchCampaignHooks: ${error.message}`);
+  if (!data) return [];
+
+  return data.map((h) => {
+    const claimedUser = Array.isArray(h.claimed_user) ? h.claimed_user[0] : h.claimed_user;
+    return {
+      id: h.id,
+      campaign_id: h.campaign_id,
+      text: h.text,
+      status: h.status,
+      claimed_by_hwid: h.claimed_by_hwid ?? null,
+      claimed_by_user_id: h.claimed_by_user_id ?? null,
+      claimed_by_email: claimedUser?.email ?? null,
+      claimed_at: h.claimed_at ?? null,
+      created_at: h.created_at,
+    };
+  });
 }

@@ -33,10 +33,50 @@ export interface UserRow {
   // the 2-minute timeout is still what covers that case.
   last_explicit_close_at: string | null;
   social_accounts: SocialAccount[] | null;
+  // Campaign-based automatic hooks (migration 027) - which campaign this
+  // person is assigned to, if any. Hook pool management itself lives on
+  // the Campaigns page; this is just the assignment.
+  campaign_id: string | null;
+  // Per-person daily export limit (migration 027) - a sub-limit within the
+  // total credit balance, not a separate currency. daily_limit of 0 is the
+  // new-person default (blocked until the founder sets a real limit).
+  // daily_used/daily_bonus/daily_reset_at reflect the server's last lazy
+  // reset, same staleness caveat as every other field here.
+  daily_limit: number;
+  daily_used: number;
+  daily_bonus: number;
+  daily_reset_at: string;
   // joined
   license_status: LicenseStatus | null;
   clip_count_30d: number;
   total_earnings: number;
+}
+
+// ── Campaign-based automatic hooks (migration 027) ──────────────────────────
+
+export type CampaignHookStatus = "available" | "reserved" | "claimed";
+
+export interface Campaign {
+  id: string;
+  name: string;
+  created_at: string;
+  // Computed by fetchCampaigns() from campaign_hooks, not a real column.
+  total_hooks: number;
+  available_hooks: number;
+  claimed_hooks: number;
+  assigned_user_count: number;
+}
+
+export interface CampaignHook {
+  id: string;
+  campaign_id: string;
+  text: string;
+  status: CampaignHookStatus;
+  claimed_by_hwid: string | null;
+  claimed_by_user_id: string | null;
+  claimed_by_email: string | null;  // joined from users, for display
+  claimed_at: string | null;
+  created_at: string;
 }
 
 export interface PendingUser {
