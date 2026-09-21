@@ -3,23 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { serverClient } from "@/lib/supabase";
 
-// ── Campaign assignment (migration 027) ─────────────────────────────────────
-
-export async function assignCampaign(
-  userId: string,
-  campaignId: string | null
-): Promise<{ ok: boolean; error?: string }> {
-  const db = serverClient();
-  if (!db) return { ok: false, error: "Server not configured." };
-  const { error } = await db
-    .from("users")
-    .update({ campaign_id: campaignId })
-    .eq("id", userId);
-
-  if (error) return { ok: false, error: error.message };
-  revalidatePath("/users");
-  return { ok: true };
-}
+// Campaign assignment (migration 027's assignCampaign) was removed by the
+// content-marketplace pivot (migration 028) - campaigns are no longer
+// per-person assigned, users.campaign_id no longer exists as a column, and
+// every campaign is open to every user at all times. See
+// components/campaigns/CampaignsPanel.tsx for the founder-facing side of
+// that pivot.
 
 // ── Daily export limit (migration 027) ──────────────────────────────────────
 //

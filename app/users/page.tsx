@@ -1,26 +1,23 @@
-import { fetchUsers, fetchSummary, fetchCampaigns } from "@/lib/queries";
+import { fetchUsers, fetchSummary } from "@/lib/queries";
 import SummaryCards from "@/components/users/SummaryCards";
 import UsersTable from "@/components/users/UsersTable";
 import RefreshButton from "@/components/users/RefreshButton";
-import type { UserRow, SummaryStats, Campaign } from "@/lib/types";
+import type { UserRow, SummaryStats } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function UsersPage() {
   let users: UserRow[];
   let stats: SummaryStats;
-  let campaigns: Campaign[];
   let fetchError: string | null = null;
 
   try {
     users = await fetchUsers();
     stats = await fetchSummary(users);
-    campaigns = await fetchCampaigns();
   } catch (err) {
     fetchError = err instanceof Error ? err.message : "Unknown error";
     users = [];
     stats = { total_users: 0, active_today: 0, total_clips: 0, total_earnings: 0 };
-    campaigns = [];
   }
 
   const updatedAt = new Date().toLocaleTimeString("en-US", {
@@ -47,7 +44,7 @@ export default async function UsersPage() {
       )}
 
       <SummaryCards stats={stats} />
-      <UsersTable users={users} campaigns={campaigns} />
+      <UsersTable users={users} />
     </div>
   );
 }

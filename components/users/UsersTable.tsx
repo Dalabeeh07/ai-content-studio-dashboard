@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useState, useTransition } from "react";
 import { browserClient } from "@/lib/supabase";
 import { CopyCell } from "@/components/CopyCell";
-import { assignCampaign, updateDailyLimit, grantDailyBonus } from "@/app/users/actions";
-import type { UserRow, LicenseStatus, SocialAccount, Campaign } from "@/lib/types";
+import { updateDailyLimit, grantDailyBonus } from "@/app/users/actions";
+import type { UserRow, LicenseStatus, SocialAccount } from "@/lib/types";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -232,49 +232,6 @@ function RevokeDialog({
   );
 }
 
-// ── Campaign assignment (migration 027) ─────────────────────────────────────
-
-function CampaignCell({
-  userId,
-  currentCampaignId,
-  campaigns,
-}: {
-  userId: string;
-  currentCampaignId: string | null;
-  campaigns: Campaign[];
-}) {
-  const [pending, startTransition] = useTransition();
-  const [value, setValue] = useState(currentCampaignId ?? "");
-  const [err, setErr] = useState("");
-
-  function handleChange(next: string) {
-    setValue(next);
-    setErr("");
-    startTransition(async () => {
-      const r = await assignCampaign(userId, next || null);
-      if (!r.ok) setErr(r.error ?? "Failed");
-    });
-  }
-
-  return (
-    <div className="flex flex-col gap-0.5">
-      <select
-        value={value}
-        disabled={pending}
-        onChange={(e) => handleChange(e.target.value)}
-        className="bg-[#0f0f1c] border border-[#1e1e38] rounded px-2 py-1 text-xs
-                   text-[#e8e8f0] focus:outline-none focus:border-brand-blue disabled:opacity-50"
-      >
-        <option value="">No campaign</option>
-        {campaigns.map((c) => (
-          <option key={c.id} value={c.id}>{c.name}</option>
-        ))}
-      </select>
-      {err && <span className="text-brand-orange text-[10px]">{err}</span>}
-    </div>
-  );
-}
-
 // ── Daily export limit (migration 027) ───────────────────────────────────────
 
 function DailyLimitCell({ user }: { user: UserRow }) {
@@ -389,10 +346,8 @@ function DailyLimitCell({ user }: { user: UserRow }) {
 
 export default function UsersTable({
   users: initialUsers,
-  campaigns = [],
 }: {
   users: UserRow[];
-  campaigns?: Campaign[];
 }) {
   const [users, setUsers] = useState<UserRow[]>(initialUsers);
   const [notifyRowId, setNotifyRowId] = useState<string | null>(null);
@@ -502,7 +457,6 @@ export default function UsersTable({
               <th className={TH}>Clips (30d)</th>
               <th className={TH}>Last Active</th>
               <th className={TH}>Social</th>
-              <th className={TH}>Campaign</th>
               <th className={TH}>Daily Limit</th>
               <th className={TH}>Status</th>
               <th className={TH}>Actions</th>
@@ -511,7 +465,7 @@ export default function UsersTable({
           <tbody className="bg-[#08080f] divide-y divide-[#1e1e38]">
             {users.length === 0 && (
               <tr>
-                <td colSpan={12} className="px-4 py-12 text-center text-[#7070a0] text-sm">
+                <td colSpan={11} className="px-4 py-12 text-center text-[#7070a0] text-sm">
                   No users yet
                 </td>
               </tr>
@@ -590,11 +544,6 @@ export default function UsersTable({
                     <SocialBadges accounts={u.social_accounts} />
                   </td>
 
-                  {/* Campaign assignment (migration 027) */}
-                  <td className={TD}>
-                    <CampaignCell userId={u.id} currentCampaignId={u.campaign_id} campaigns={campaigns} />
-                  </td>
-
                   {/* Daily export limit (migration 027) */}
                   <td className={TD}>
                     <DailyLimitCell user={u} />
@@ -640,7 +589,7 @@ export default function UsersTable({
                 </tr>
                 {notifyRowId === u.id && (
                   <tr className="bg-[#0f0f1c]">
-                    <td colSpan={12} className="px-4 py-3">
+                    <td colSpan={11} className="px-4 py-3">
                       <InlineNotifyForm
                         hwid={u.hwid ?? ""}
                         onClose={() => setNotifyRowId(null)}

@@ -1,8 +1,10 @@
 import { serverClient } from "./supabase";
 import { ADMIN_SHARE, USER_SHARE } from "./constants";
 import type {
-  Campaign, CampaignHook, ClipRow, EarningsUserRow, MonthlyBar,
-  PendingUser, SubmissionRow, SummaryStats, UserRow,
+  Campaign, CampaignClip, CampaignCompliance, CampaignHook,
+  CampaignHookStatusRow, CampaignTermsLogRow, CampaignVideo, ClipRow,
+  EarningsUserRow, MonthlyBar, PendingUser, SubmissionRow, SummaryStats,
+  UserRow,
 } from "./types";
 
 export async function fetchUsers(): Promise<UserRow[]> {
@@ -68,7 +70,6 @@ export async function fetchUsers(): Promise<UserRow[]> {
       last_export_at:        u.last_export_at ?? null,
       last_explicit_close_at: u.last_explicit_close_at ?? null,
       social_accounts:  Array.isArray(u.social_accounts) ? u.social_accounts : null,
-      campaign_id:    u.campaign_id ?? null,
       daily_limit:    u.daily_limit ?? 0,
       daily_used:     u.daily_used ?? 0,
       daily_bonus:    u.daily_bonus ?? 0,
@@ -332,12 +333,6 @@ export async function fetchCampaigns(): Promise<Campaign[]> {
     .select("campaign_id, status");
   if (hErr) throw new Error(`fetchCampaigns hooks: ${hErr.message}`);
 
-  const { data: assignees, error: aErr } = await db
-    .from("users")
-    .select("campaign_id")
-    .not("campaign_id", "is", null);
-  if (aErr) throw new Error(`fetchCampaigns assignees: ${aErr.message}`);
-
   const poolAgg: Record<string, { total: number; available: number; claimed: number }> = {};
   for (const h of hooks ?? []) {
     const k = h.campaign_id as string;
@@ -346,24 +341,39 @@ export async function fetchCampaigns(): Promise<Campaign[]> {
     if (h.status === "available") poolAgg[k].available += 1;
     if (h.status === "claimed") poolAgg[k].claimed += 1;
   }
-  const assigneeCount: Record<string, number> = {};
-  for (const a of assignees ?? []) {
-    const k = a.campaign_id as string;
-    assigneeCount[k] = (assigneeCount[k] ?? 0) + 1;
-  }
 
   return campaigns.map((c) => {
     const pool = poolAgg[c.id] ?? { total: 0, available: 0, claimed: 0 };
     return {
       id: c.id,
       name: c.name,
+      content_type: c.content_type,
+      terms_text: c.terms_text ?? "",
+      status: c.status,
       created_at: c.created_at,
       total_hooks: pool.total,
       available_hooks: pool.available,
       claimed_hooks: pool.claimed,
-      assigned_user_count: assigneeCount[c.id] ?? 0,
     };
   });
+}
+
+// Lightweight per-hook-row fetch (id/campaign_id/status only) purely to seed
+// CampaignsPanel.tsx's live hook-count Realtime patching - see
+// CampaignHookStatusRow's own doc comment in lib/types.ts for why a bare
+// aggregate can't be live-patched from a single UPDATE event alone.
+export async function fetchCampaignHookStatuses(): Promise<CampaignHookStatusRow[]> {
+  const db = serverClient();
+  if (!db) return [];
+
+  const { data, error } = await db.from("campaign_hooks").select("id, campaign_id, status");
+  if (error) throw new Error(`fetchCampaignHookStatuses: ${error.message}`);
+
+  return (data ?? []).map((h) => ({
+    id: h.id,
+    campaign_id: h.campaign_id,
+    status: h.status,
+  }));
 }
 
 export async function fetchCampaignHooks(campaignId: string): Promise<CampaignHook[]> {
@@ -392,4 +402,109 @@ export async function fetchCampaignHooks(campaignId: string): Promise<CampaignHo
       created_at: h.created_at,
     };
   });
+}
+
+// ── Content marketplace pivot (migration 028) ────────────────────────────────
+
+export async function fetchCampaignVideos(campaignId: string): Promise<CampaignVideo[]> {
+  const db = serverClient();
+  if (!db) return [];
+
+  const { data, error } = await db
+    .from("campaign_videos")
+    .select("*")
+    .eq("campaign_id", campaignId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`fetchCampaignVideos: ${error.message}`);
+  if (!data) return [];
+
+  return data.map((v) => ({
+    id: v.id,
+    campaign_id: v.campaign_id,
+    original_filename: v.original_filename,
+    storage_path: v.storage_path,
+    status: v.status,
+    claimed_by_hwid: v.claimed_by_hwid ?? null,
+    claimed_at: v.claimed_at ?? null,
+    heartbeat_at: v.heartbeat_at ?? null,
+    progress_fraction: v.progress_fraction ?? 0,
+    progress_message: v.progress_message ?? null,
+    error_message: v.error_message ?? null,
+    duration_seconds: v.duration_seconds ?? null,
+    created_at: v.created_at,
+    completed_at: v.completed_at ?? null,
+  }));
+}
+
+// All of a campaign's clips in one query, grouped by campaign_video_id
+// client-side (CampaignVideosPanel.tsx) - cheaper than one query per video
+// row, and this table has no Realtime grant (migration 029's header: the
+// founder's own revalidatePath after his own delete/upload actions is
+// sufficient, nothing here needs to update live for a second viewer).
+export async function fetchCampaignClips(campaignId: string): Promise<CampaignClip[]> {
+  const db = serverClient();
+  if (!db) return [];
+
+  const { data, error } = await db
+    .from("campaign_clips")
+    .select("*")
+    .eq("campaign_id", campaignId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`fetchCampaignClips: ${error.message}`);
+  if (!data) return [];
+
+  return data.map((c) => ({
+    id: c.id,
+    campaign_video_id: c.campaign_video_id,
+    campaign_id: c.campaign_id,
+    storage_path: c.storage_path,
+    start_seconds: c.start_seconds,
+    end_seconds: c.end_seconds,
+    duration_seconds: c.duration_seconds,
+    created_at: c.created_at,
+  }));
+}
+
+// Compliance/stats view: who has opened+agreed to this campaign's terms
+// (one campaign_terms_log row per open, re-logged every time - so the
+// distinct-user count below, not the row count, is "how many people"),
+// plus the campaign's overall export total. Deliberately does NOT resolve
+// which user exported which specific clip - the founder said that view
+// isn't needed.
+export async function fetchCampaignCompliance(campaignId: string): Promise<CampaignCompliance> {
+  const db = serverClient();
+  if (!db) return { openedCount: 0, exportedCount: 0, log: [] };
+
+  const { data: logRows, error: lErr } = await db
+    .from("campaign_terms_log")
+    .select("id, campaign_id, user_id, hwid, accepted_at, users(email)")
+    .eq("campaign_id", campaignId)
+    .order("accepted_at", { ascending: false });
+  if (lErr) throw new Error(`fetchCampaignCompliance log: ${lErr.message}`);
+
+  const { count: exportedCount, error: eErr } = await db
+    .from("campaign_exports")
+    .select("id", { count: "exact", head: true })
+    .eq("campaign_id", campaignId);
+  if (eErr) throw new Error(`fetchCampaignCompliance exports: ${eErr.message}`);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const log: CampaignTermsLogRow[] = ((logRows ?? []) as any[]).map((r) => {
+    const uRow = Array.isArray(r.users) ? r.users[0] : r.users;
+    return {
+      id: r.id as string,
+      campaign_id: r.campaign_id as string,
+      user_id: (r.user_id as string | null) ?? null,
+      hwid: r.hwid as string,
+      accepted_at: r.accepted_at as string,
+      user_email: (uRow as { email: string | null } | null)?.email ?? null,
+    } satisfies CampaignTermsLogRow;
+  });
+
+  // "How many people have opened this campaign" - dedupe by user_id when
+  // known, falling back to hwid (user_id is nullable: a hwid with no
+  // matching users row at open time still counts as one distinct opener).
+  const distinct = new Set(log.map((r) => r.user_id ?? r.hwid));
+
+  return { openedCount: distinct.size, exportedCount: exportedCount ?? 0, log };
 }
