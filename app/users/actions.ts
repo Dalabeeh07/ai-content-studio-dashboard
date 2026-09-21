@@ -18,7 +18,6 @@ export async function assignCampaign(
 
   if (error) return { ok: false, error: error.message };
   revalidatePath("/users");
-  revalidatePath("/campaigns");
   return { ok: true };
 }
 

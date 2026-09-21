@@ -163,12 +163,19 @@ const STATUS_STYLE: Record<string, string> = {
 function HookRow({ hook }: { hook: CampaignHook }) {
   const [pending, startTransition] = useTransition();
   const [err, setErr] = useState("");
+  const [deleted, setDeleted] = useState(false);
+
+  if (deleted) return null;
 
   function handleDelete() {
     setErr("");
+    setDeleted(true); // hide immediately — optimistic
     startTransition(async () => {
       const r = await deleteHook(hook.id);
-      if (!r.ok) setErr(r.error ?? "Failed");
+      if (!r.ok) {
+        setDeleted(false); // roll back
+        setErr(r.error ?? "Failed");
+      }
     });
   }
 

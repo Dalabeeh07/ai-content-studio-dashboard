@@ -99,11 +99,12 @@ function EditCreditsCell({ licenseKey, current }: { licenseKey: string; current:
 
   function save() {
     setErr("");
+    setEditing(false); // close immediately — optimistic
     startTransition(async () => {
       const r = await updateCredits(licenseKey, value);
-      if (r.ok) {
-        setEditing(false);
-      } else {
+      if (!r.ok) {
+        setValue(current); // revert display value
+        setEditing(true);  // re-open so user can fix
         setErr(r.error ?? "Failed");
       }
     });
@@ -157,54 +158,91 @@ function EditCreditsCell({ licenseKey, current }: { licenseKey: string; current:
 
 // ── Action buttons ────────────────────────────────────────────────────────────
 
-function ActionCell({ row }: { row: LicenseRow }) {
+function ActionCell({
+  row,
+  onOptimisticUpdate,
+}: {
+  row: LicenseRow;
+  onOptimisticUpdate: (patch: Partial<Pick<LicenseRow, "status" | "hardware_id" | "activated_at">>) => void;
+}) {
   const [pending, startTransition] = useTransition();
+  const [err, setErr] = useState("");
   const status = effectiveStatus(row);
 
   function handleRevoke() {
     if (!confirm(`Revoke license ${maskKey(row.key)}? This will cut off the user immediately.`)) return;
-    startTransition(async () => { await revokeLicense(row.key); });
+    const prevStatus = row.status;
+    onOptimisticUpdate({ status: "revoked" });
+    setErr("");
+    startTransition(async () => {
+      const r = await revokeLicense(row.key);
+      if (!r.ok) {
+        onOptimisticUpdate({ status: prevStatus });
+        setErr(r.error ?? "Failed");
+      }
+    });
   }
 
   function handleUnbind() {
     if (!confirm(`Unbind device from ${maskKey(row.key)}? The key can be re-activated on a new device.`)) return;
-    startTransition(async () => { await unbindDevice(row.key); });
+    const prevHwid = row.hardware_id;
+    const prevActivatedAt = row.activated_at;
+    onOptimisticUpdate({ hardware_id: null, activated_at: null });
+    setErr("");
+    startTransition(async () => {
+      const r = await unbindDevice(row.key);
+      if (!r.ok) {
+        onOptimisticUpdate({ hardware_id: prevHwid, activated_at: prevActivatedAt });
+        setErr(r.error ?? "Failed");
+      }
+    });
   }
 
   const btnBase =
     "px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed";
 
   return (
-    <div className="flex gap-1.5 flex-wrap">
-      {status !== "revoked" && (
-        <button
-          onClick={handleRevoke}
-          disabled={pending}
-          className={`${btnBase} bg-[#141428] border-[#1e1e38] text-brand-orange hover:border-brand-orange hover:bg-[#2a1010]`}
-        >
-          Revoke
-        </button>
-      )}
-      {row.hardware_id && status !== "revoked" && (
-        <button
-          onClick={handleUnbind}
-          disabled={pending}
-          className={`${btnBase} bg-[#141428] border-[#1e1e38] text-brand-yellow hover:border-brand-yellow hover:bg-[#1a1400]`}
-        >
-          Unbind
-        </button>
-      )}
+    <div className="flex flex-col gap-1">
+      <div className="flex gap-1.5 flex-wrap">
+        {status !== "revoked" && (
+          <button
+            onClick={handleRevoke}
+            disabled={pending}
+            className={`${btnBase} bg-[#141428] border-[#1e1e38] text-brand-orange hover:border-brand-orange hover:bg-[#2a1010]`}
+          >
+            Revoke
+          </button>
+        )}
+        {row.hardware_id && status !== "revoked" && (
+          <button
+            onClick={handleUnbind}
+            disabled={pending}
+            className={`${btnBase} bg-[#141428] border-[#1e1e38] text-brand-yellow hover:border-brand-yellow hover:bg-[#1a1400]`}
+          >
+            Unbind
+          </button>
+        )}
+      </div>
+      {err && <span className="text-brand-orange text-[10px]">{err}</span>}
     </div>
   );
 }
 
 // ── Main table ────────────────────────────────────────────────────────────────
 
-export default function LicensesTable({ licenses }: { licenses: LicenseRow[] }) {
+export default function LicensesTable({ licenses: initialLicenses }: { licenses: LicenseRow[] }) {
+  const [licenses, setLicenses]   = useState<LicenseRow[]>(initialLicenses);
   const [filter, setFilter]       = useState("all");
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [bulkPending, startBulk]  = useTransition();
   const [bulkError, setBulkError] = useState("");
+
+  // Sync when server re-renders with fresh data (e.g. after RefreshButton)
+  const [lastSeenInitial, setLastSeenInitial] = useState(initialLicenses);
+  if (initialLicenses !== lastSeenInitial) {
+    setLastSeenInitial(initialLicenses);
+    setLicenses(initialLicenses);
+  }
 
   const filtered = useMemo(() => {
     if (filter === "all") return licenses;
@@ -415,7 +453,14 @@ export default function LicensesTable({ licenses }: { licenses: LicenseRow[] }) 
 
                   {/* Actions */}
                   <td className={TD}>
-                    <ActionCell row={row} />
+                    <ActionCell
+                      row={row}
+                      onOptimisticUpdate={(patch) =>
+                        setLicenses((prev) =>
+                          prev.map((x) => (x.key === row.key ? { ...x, ...patch } : x))
+                        )
+                      }
+                    />
                   </td>
                 </tr>
               );

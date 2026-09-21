@@ -287,19 +287,26 @@ function DailyLimitCell({ user }: { user: UserRow }) {
 
   function saveLimit() {
     setErr("");
+    setEditingLimit(false); // close immediately — optimistic
     startTransition(async () => {
       const r = await updateDailyLimit(user.id, limitValue);
-      if (r.ok) setEditingLimit(false);
-      else setErr(r.error ?? "Failed");
+      if (!r.ok) {
+        setLimitValue(user.daily_limit);
+        setEditingLimit(true); // re-open on error
+        setErr(r.error ?? "Failed");
+      }
     });
   }
 
   function saveBonus() {
     setErr("");
+    setBonusInput(false); // close immediately — optimistic
     startTransition(async () => {
       const r = await grantDailyBonus(user.id, bonusValue);
-      if (r.ok) setBonusInput(false);
-      else setErr(r.error ?? "Failed");
+      if (!r.ok) {
+        setBonusInput(true); // re-open on error
+        setErr(r.error ?? "Failed");
+      }
     });
   }
 

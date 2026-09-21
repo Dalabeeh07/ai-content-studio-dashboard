@@ -73,18 +73,39 @@ function LinkCell({ url }: { url: string }) {
 
 // ── Row actions ────────────────────────────────────────────────────────────────
 
-function RowActions({ row }: { row: SubmissionRow }) {
+function RowActions({
+  row,
+  onOptimisticUpdate,
+}: {
+  row: SubmissionRow;
+  onOptimisticUpdate: (patch: Partial<Pick<SubmissionRow, "status" | "whop_confirmed">>) => void;
+}) {
   const [pending, startTransition] = useTransition();
+  const [err, setErr] = useState("");
 
   function setStatus(status: SubmissionStatus) {
+    const prev = row.status;
+    onOptimisticUpdate({ status });
+    setErr("");
     startTransition(async () => {
-      await updateSubmissionStatus(row.id, status);
+      const r = await updateSubmissionStatus(row.id, status);
+      if (!r.ok) {
+        onOptimisticUpdate({ status: prev });
+        setErr(r.error ?? "Failed");
+      }
     });
   }
 
   function toggleWhop() {
+    const prev = row.whop_confirmed;
+    onOptimisticUpdate({ whop_confirmed: !prev });
+    setErr("");
     startTransition(async () => {
-      await setWhopConfirmed(row.id, !row.whop_confirmed);
+      const r = await setWhopConfirmed(row.id, !prev);
+      if (!r.ok) {
+        onOptimisticUpdate({ whop_confirmed: prev });
+        setErr(r.error ?? "Failed");
+      }
     });
   }
 
@@ -92,46 +113,49 @@ function RowActions({ row }: { row: SubmissionRow }) {
     "px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed";
 
   return (
-    <div className="flex gap-1.5 flex-wrap">
-      <button
-        onClick={toggleWhop}
-        disabled={pending}
-        title="Toggle after you've manually checked the matching Whop submission exists"
-        className={`${btnBase} ${
-          row.whop_confirmed
-            ? "bg-[#0f2a1a] border-brand-mint/40 text-brand-mint"
-            : "bg-[#141428] border-[#1e1e38] text-[#7070a0] hover:border-brand-mint hover:text-brand-mint"
-        }`}
-      >
-        {row.whop_confirmed ? "✓ Whop confirmed" : "Confirm on Whop"}
-      </button>
-      {row.status !== "verified" && (
+    <div className="flex flex-col gap-1">
+      <div className="flex gap-1.5 flex-wrap">
         <button
-          onClick={() => setStatus("verified")}
+          onClick={toggleWhop}
           disabled={pending}
-          className={`${btnBase} bg-[#141428] border-[#1e1e38] text-brand-blue hover:border-brand-blue hover:bg-[#0f1a2a]`}
+          title="Toggle after you've manually checked the matching Whop submission exists"
+          className={`${btnBase} ${
+            row.whop_confirmed
+              ? "bg-[#0f2a1a] border-brand-mint/40 text-brand-mint"
+              : "bg-[#141428] border-[#1e1e38] text-[#7070a0] hover:border-brand-mint hover:text-brand-mint"
+          }`}
         >
-          Mark Verified
+          {row.whop_confirmed ? "✓ Whop confirmed" : "Confirm on Whop"}
         </button>
-      )}
-      {row.status !== "disputed" && (
-        <button
-          onClick={() => setStatus("disputed")}
-          disabled={pending}
-          className={`${btnBase} bg-[#141428] border-[#1e1e38] text-brand-orange hover:border-brand-orange hover:bg-[#2a1010]`}
-        >
-          Mark Disputed
-        </button>
-      )}
-      {row.status !== "pending_review" && (
-        <button
-          onClick={() => setStatus("pending_review")}
-          disabled={pending}
-          className={`${btnBase} bg-[#141428] border-[#1e1e38] text-[#7070a0] hover:border-[#7070a0] hover:bg-[#1a1a2e]`}
-        >
-          Reset to Pending
-        </button>
-      )}
+        {row.status !== "verified" && (
+          <button
+            onClick={() => setStatus("verified")}
+            disabled={pending}
+            className={`${btnBase} bg-[#141428] border-[#1e1e38] text-brand-blue hover:border-brand-blue hover:bg-[#0f1a2a]`}
+          >
+            Mark Verified
+          </button>
+        )}
+        {row.status !== "disputed" && (
+          <button
+            onClick={() => setStatus("disputed")}
+            disabled={pending}
+            className={`${btnBase} bg-[#141428] border-[#1e1e38] text-brand-orange hover:border-brand-orange hover:bg-[#2a1010]`}
+          >
+            Mark Disputed
+          </button>
+        )}
+        {row.status !== "pending_review" && (
+          <button
+            onClick={() => setStatus("pending_review")}
+            disabled={pending}
+            className={`${btnBase} bg-[#141428] border-[#1e1e38] text-[#7070a0] hover:border-[#7070a0] hover:bg-[#1a1a2e]`}
+          >
+            Reset to Pending
+          </button>
+        )}
+      </div>
+      {err && <span className="text-brand-orange text-[10px]">{err}</span>}
     </div>
   );
 }
@@ -404,7 +428,14 @@ export default function SubmissionsTable({ submissions: initialSubmissions }: { 
                     </div>
                   </td>
                   <td className={TD}>
-                    <RowActions row={s} />
+                    <RowActions
+                      row={s}
+                      onOptimisticUpdate={(patch) =>
+                        setSubmissions((prev) =>
+                          prev.map((x) => (x.id === s.id ? { ...x, ...patch } : x))
+                        )
+                      }
+                    />
                   </td>
                 </tr>
               );
