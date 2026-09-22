@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache";
 import { serverClient } from "@/lib/supabase";
 
 // ── Send notification ─────────────────────────────────────────────────────────
+//
+// notifications.title is NOT NULL with no default, but neither this
+// dashboard nor the desktop app's notification view ever reads it (the
+// desktop app's get_notifications doesn't even select the column) - a
+// fixed placeholder satisfies the constraint without adding a compose-UI
+// field for a value nothing displays.
 
 export async function sendNotification(formData: FormData): Promise<{
   ok: boolean;
@@ -27,7 +33,7 @@ export async function sendNotification(formData: FormData): Promise<{
     }
     const { error } = await db
       .from("notifications")
-      .insert({ hwid, body: message.trim() });
+      .insert({ hwid, title: "Notification", body: message.trim() });
     if (error) return { ok: false, error: error.message };
     revalidatePath("/notifications");
     return { ok: true, recipientCount: 1 };
@@ -44,13 +50,19 @@ export async function sendNotification(formData: FormData): Promise<{
     return { ok: false, error: uErr?.message ?? "Failed to fetch users." };
   }
 
-  if (users.length === 0) {
+  // notifications.hwid is NOT NULL - a user row with no hardware_id (seen
+  // live in production) can't be delivered to anyway, and left in would
+  // fail the whole batch insert, not just that one row.
+  const targetable = (users as { hardware_id: string | null }[]).filter((u) => u.hardware_id);
+
+  if (targetable.length === 0) {
     revalidatePath("/notifications");
     return { ok: true, recipientCount: 0 };
   }
 
-  const rows = (users as { hardware_id: string }[]).map((u) => ({
-    hwid: u.hardware_id,
+  const rows = targetable.map((u) => ({
+    hwid: u.hardware_id as string,
+    title: "Notification",
     body: message.trim(),
   }));
 
@@ -58,7 +70,7 @@ export async function sendNotification(formData: FormData): Promise<{
   if (bulkErr) return { ok: false, error: bulkErr.message };
 
   revalidatePath("/notifications");
-  return { ok: true, recipientCount: users.length };
+  return { ok: true, recipientCount: targetable.length };
 }
 
 // ── Delete notification ───────────────────────────────────────────────────────

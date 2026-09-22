@@ -154,7 +154,6 @@ export interface PendingUser {
   hwid: string;
   full_name: string | null;
   whop_username: string | null;
-  license_key: string | null;
   social_accounts: SocialAccount[] | null;
   gemini_key_hint: string | null;
   status: "pending" | "approved" | "rejected";

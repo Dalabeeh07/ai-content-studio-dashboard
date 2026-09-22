@@ -3,11 +3,18 @@
 import { useTransition } from "react";
 import { deleteNotification } from "@/app/notifications/actions";
 
-export default function DeleteButton({ notifId }: { notifId: string }) {
+export default function DeleteButton({
+  notifId,
+  onOptimisticDelete,
+}: {
+  notifId: string;
+  onOptimisticDelete?: () => void;
+}) {
   const [pending, startTransition] = useTransition();
 
   function handleDelete() {
     if (!confirm("Delete this notification and all delivery records?")) return;
+    onOptimisticDelete?.();
     startTransition(() => { void deleteNotification(notifId); });
   }
 

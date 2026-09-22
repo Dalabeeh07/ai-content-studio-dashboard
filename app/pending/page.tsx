@@ -1,7 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { browserClient } from "@/lib/supabase";
 import type { PendingUser } from "@/lib/types";
+
+// The Realtime payload only ever carries pending_users' own anon-granted
+// columns (migration 032) - email/reject_reason are deliberately excluded
+// as PII/internal-only. A live INSERT/UPDATE payload is merged into the
+// existing row rather than replacing it outright, so those fields (only
+// ever populated by the initial fetch) are preserved instead of getting
+// wiped to undefined.
+type RealtimePendingRow = Pick<
+  PendingUser,
+  "id" | "hwid" | "full_name" | "whop_username" | "social_accounts" | "gemini_key_hint" | "status" | "reviewed_at"
+> & { registered_at: string };
 
 // ── Social badges ─────────────────────────────────────────────────────────────
 // UsersTable.tsx has an equivalent SocialBadges, but it isn't exported from
@@ -73,11 +85,74 @@ export default function PendingPage() {
     }
   }, []);
 
+  // Initial load only - the 30s poll this used to run is replaced below
+  // by a real Realtime subscription (migration 032).
   useEffect(() => {
     load();
-    const t = setInterval(load, 30_000);
-    return () => clearInterval(t);
   }, [load]);
+
+  useEffect(() => {
+    const channel = browserClient
+      .channel("pending-users-live")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT", schema: "public", table: "pending_users",
+          select: [
+            "id", "hwid", "full_name", "whop_username", "social_accounts",
+            "gemini_key_hint", "status", "registered_at", "reviewed_at",
+          ],
+        },
+        (payload) => {
+          const r = payload.new as RealtimePendingRow;
+          const inserted: PendingUser = {
+            id: r.id,
+            hwid: r.hwid,
+            full_name: r.full_name,
+            whop_username: r.whop_username,
+            social_accounts: r.social_accounts,
+            gemini_key_hint: r.gemini_key_hint,
+            status: r.status,
+            created_at: r.registered_at,
+            reviewed_at: r.reviewed_at,
+          };
+          setUsers((prev) => (prev.some((u) => u.id === inserted.id) ? prev : [inserted, ...prev]));
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE", schema: "public", table: "pending_users",
+          select: [
+            "id", "hwid", "full_name", "whop_username", "social_accounts",
+            "gemini_key_hint", "status", "registered_at", "reviewed_at",
+          ],
+        },
+        (payload) => {
+          const r = payload.new as RealtimePendingRow;
+          setUsers((prev) =>
+            prev.map((u) =>
+              u.id === r.id
+                ? {
+                    ...u, // merge - preserves anything else not in this grant
+                    status: r.status,
+                    reviewed_at: r.reviewed_at,
+                    full_name: r.full_name,
+                    whop_username: r.whop_username,
+                    social_accounts: r.social_accounts,
+                    gemini_key_hint: r.gemini_key_hint,
+                  }
+                : u
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      browserClient.removeChannel(channel);
+    };
+  }, []);
 
   const act = async (id: string, action: "approve" | "reject") => {
     setBusy(id);
@@ -124,7 +199,6 @@ export default function PendingPage() {
               <tr className="border-b border-border bg-bg-card text-muted text-left text-xs uppercase tracking-wide">
                 <th className="px-4 py-3">الاسم الكامل</th>
                 <th className="px-4 py-3">يوزر Whop</th>
-                <th className="px-4 py-3">مفتاح الرخصة</th>
                 <th className="px-4 py-3">الحسابات الاجتماعية</th>
                 <th className="px-4 py-3">Gemini Key</th>
                 <th className="px-4 py-3">الحالة</th>
@@ -143,9 +217,6 @@ export default function PendingPage() {
                     </td>
                     <td className="px-4 py-3 text-muted">
                       {u.whop_username ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-muted font-mono text-xs">
-                      {u.license_key ?? "—"}
                     </td>
                     <td className="px-4 py-3">
                       <SocialBadges accounts={u.social_accounts} />

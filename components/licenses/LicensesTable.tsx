@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition, useMemo } from "react";
+import { useEffect, useState, useTransition, useMemo } from "react";
 import { revokeLicense, bulkRevoke, unbindDevice, updateCredits } from "@/app/licenses/actions";
+import { browserClient } from "@/lib/supabase";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -243,6 +244,48 @@ export default function LicensesTable({ licenses: initialLicenses }: { licenses:
     setLastSeenInitial(initialLicenses);
     setLicenses(initialLicenses);
   }
+
+  // Live updates (migration 032) - covers both a second admin session's
+  // own action and, notably, a real end-user activating a license from
+  // the desktop app (activate_license RPC sets hardware_id/activated_at
+  // independently of anything happening in this dashboard) - `key` is
+  // deliberately not in the anon grant (the master credential, same
+  // exclusion as users.license_key/campaign_hooks.text), so it's never
+  // part of this payload and the merge below leaves it untouched.
+  useEffect(() => {
+    const channel = browserClient
+      .channel("licenses-live")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE", schema: "public", table: "licenses",
+          select: ["id", "label", "credits_limit", "hardware_id", "status", "activated_at", "expires_at"],
+        },
+        (payload) => {
+          const updated = payload.new as Omit<LicenseRow, "key" | "created_at">;
+          setLicenses((prev) =>
+            prev.map((l) =>
+              l.id === updated.id
+                ? {
+                    ...l,
+                    label: updated.label,
+                    credits_limit: updated.credits_limit,
+                    hardware_id: updated.hardware_id,
+                    status: updated.status,
+                    activated_at: updated.activated_at,
+                    expires_at: updated.expires_at,
+                  }
+                : l
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      browserClient.removeChannel(channel);
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     if (filter === "all") return licenses;
