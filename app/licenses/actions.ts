@@ -26,6 +26,10 @@ export async function generateLicenses(formData: FormData): Promise<{
   keys?: string[];
   error?: string;
 }> {
+  // credits_limit is a PER-DAY cap as of migration 033 - the server (the
+  // live deduct_credit RPC) resets licenses.credits_used to 0 every real
+  // UTC midnight now, so this is "credits per day", not a one-time or
+  // monthly allotment.
   const creditsLimit = Math.max(1, Number(formData.get("credits_limit")) || 50);
   const userLabel    = (formData.get("label") as string).trim() || null;
   const expiresRaw   = (formData.get("expires") as string) || null;
@@ -56,12 +60,20 @@ export async function generateLicenses(formData: FormData): Promise<{
 export async function revokeLicense(licenseKey: string): Promise<{ ok: boolean; error?: string }> {
   const db = serverClient();
   if (!db) return { ok: false, error: "Server not configured." };
-  const { error } = await db
+  const { data, error } = await db
     .from("licenses")
     .update({ status: "revoked" })
-    .eq("key", licenseKey);
+    .eq("key", licenseKey)
+    .select("id");
 
   if (error) return { ok: false, error: error.message };
+  // A key that doesn't match any row updates nothing and returns no error
+  // from Supabase either - confirmed live during the revoke investigation
+  // (revoking a nonexistent key came back {"error": null}). Without this
+  // check the admin sees a false-positive success toast.
+  if (!data || data.length === 0) {
+    return { ok: false, error: "License key not found - nothing was revoked." };
+  }
   revalidatePath("/licenses");
   return { ok: true };
 }
@@ -98,9 +110,11 @@ export async function unbindDevice(licenseKey: string): Promise<{ ok: boolean; e
 }
 
 // ── Edit credits ──────────────────────────────────────────────────────────────
+// credits_limit is a PER-DAY cap (migration 033) - see generateLicenses()
+// above.
 
 export async function updateCredits(licenseKey: string, credits: number): Promise<{ ok: boolean; error?: string }> {
-  if (credits < 1 || credits > 10_000) return { ok: false, error: "Credits must be 1–10,000." };
+  if (credits < 1 || credits > 10_000) return { ok: false, error: "Credits per day must be 1–10,000." };
   const db = serverClient();
   if (!db) return { ok: false, error: "Server not configured." };
   const { error } = await db

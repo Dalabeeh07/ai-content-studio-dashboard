@@ -68,9 +68,9 @@ export default function GenerateForm() {
 
       <form ref={formRef} onSubmit={handleSubmit}>
         <div className="grid grid-cols-2 gap-4">
-          {/* Credits limit */}
+          {/* Credits per day */}
           <div>
-            <Label>Credits Limit</Label>
+            <Label>Credits Per Day</Label>
             <input
               type="number"
               name="credits_limit"

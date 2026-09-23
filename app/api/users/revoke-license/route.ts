@@ -13,13 +13,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Server not configured." }, { status: 503 });
   }
 
-  const { error } = await db
+  const { data, error } = await db
     .from("licenses")
     .update({ status: "revoked" })
-    .eq("key", license_key);
+    .eq("key", license_key)
+    .select("id");
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // Same silent-success risk as licenses/actions.ts's revokeLicense - a
+  // key that matches no row still comes back with error: null.
+  if (!data || data.length === 0) {
+    return NextResponse.json({ error: "License key not found - nothing was revoked." }, { status: 404 });
   }
 
   return NextResponse.json({ ok: true });

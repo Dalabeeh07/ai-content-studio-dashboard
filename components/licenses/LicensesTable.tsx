@@ -10,6 +10,7 @@ export interface LicenseRow {
   id: string;
   key: string;
   label: string | null;
+  /** Credits PER DAY (migration 033) - resets server-side every UTC midnight. */
   credits_limit: number;
   hardware_id: string | null;
   status: "active" | "expired" | "revoked";
@@ -410,7 +411,7 @@ export default function LicensesTable({ licenses: initialLicenses }: { licenses:
               </th>
               <th className={TH}>Key</th>
               <th className={TH}>Label</th>
-              <th className={TH}>Credits</th>
+              <th className={TH}>Credits/Day</th>
               <th className={TH}>Bound Device</th>
               <th className={TH}>Status</th>
               <th className={TH}>Activated</th>
