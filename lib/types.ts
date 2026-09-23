@@ -57,7 +57,10 @@ export type CampaignHookStatus = "available" | "reserved" | "claimed";
 // analyzes every video himself, from this dashboard, and every campaign is
 // open to every user at all times (see CampaignVideo/CampaignClip below).
 
-export type CampaignContentType = "gaming" | "podcast" | "vlog";
+// migration 040 added "entertainment"/"finance" alongside the original
+// three (Whop's own Content Rewards category tags - podcast-specific and
+// music campaigns were deliberately excluded, per the founder).
+export type CampaignContentType = "gaming" | "podcast" | "vlog" | "entertainment" | "finance";
 export type CampaignStatus = "active" | "paused" | "deleted"; // soft-delete
 
 export interface Campaign {

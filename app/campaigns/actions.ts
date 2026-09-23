@@ -5,10 +5,14 @@ import { revalidatePath } from "next/cache";
 import { serverClient } from "@/lib/supabase";
 import type { CampaignContentType, CampaignStatus } from "@/lib/types";
 
-// These three literal values are wired verbatim into the desktop app's
-// existing Gemini-prompt-selection logic (services/smart_clipper.py) - do
-// not add/rename without updating that side too.
-const VALID_CONTENT_TYPES: readonly CampaignContentType[] = ["gaming", "podcast", "vlog"];
+// These five literal values are wired verbatim into the desktop app's
+// existing Gemini-prompt-selection logic (services/smart_clipper.py and
+// services/hook_service.py) - do not add/rename without updating that
+// side too. "entertainment"/"finance" added in migration 040 (Whop's own
+// Content Rewards category tags - podcast-specific and music campaigns
+// were deliberately excluded, per the founder).
+const VALID_CONTENT_TYPES: readonly CampaignContentType[] =
+    ["gaming", "podcast", "vlog", "entertainment", "finance"];
 const VALID_STATUSES: readonly CampaignStatus[] = ["active", "paused", "deleted"];
 
 // ── Create campaign ──────────────────────────────────────────────────────────

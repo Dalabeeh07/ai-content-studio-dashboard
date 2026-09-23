@@ -26,6 +26,8 @@ const CONTENT_TYPES: { value: CampaignContentType; label: string }[] = [
   { value: "gaming", label: "Gaming" },
   { value: "podcast", label: "Podcast" },
   { value: "vlog", label: "Vlog" },
+  { value: "entertainment", label: "Entertainment" },
+  { value: "finance", label: "Finance" },
 ];
 
 // ── Create campaign ──────────────────────────────────────────────────────────
