@@ -149,18 +149,6 @@ export interface CampaignCompliance {
   log: CampaignTermsLogRow[];
 }
 
-export interface PendingUser {
-  id: string;
-  hwid: string;
-  full_name: string | null;
-  whop_username: string | null;
-  social_accounts: SocialAccount[] | null;
-  gemini_key_hint: string | null;
-  status: "pending" | "approved" | "rejected";
-  created_at: string;
-  reviewed_at: string | null;
-}
-
 export interface ClipRow {
   id: string;
   hwid: string | null;

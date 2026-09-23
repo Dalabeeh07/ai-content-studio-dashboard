@@ -3,7 +3,7 @@ import { ADMIN_SHARE, USER_SHARE } from "./constants";
 import type {
   Campaign, CampaignClip, CampaignCompliance, CampaignHook,
   CampaignHookStatusRow, CampaignTermsLogRow, CampaignVideo, ClipRow,
-  EarningsUserRow, MonthlyBar, PendingUser, SubmissionRow, SummaryStats,
+  EarningsUserRow, MonthlyBar, SubmissionRow, SummaryStats,
   UserRow,
 } from "./types";
 
@@ -79,38 +79,6 @@ export async function fetchUsers(): Promise<UserRow[]> {
       total_earnings: agg.earnings,
     };
   });
-}
-
-// ── Pending users ─────────────────────────────────────────────────────────────
-
-export async function fetchPendingUsers(): Promise<PendingUser[]> {
-  const db = serverClient();
-  if (!db) return [];
-
-  // license_key is not a real column here (see the matching comment in
-  // app/api/pending/list/route.ts, which this duplicates but is unused by).
-  const { data, error } = await db
-    .from("pending_users")
-    .select(
-      "id, hwid, full_name, whop_username, social_accounts, " +
-      "gemini_key_hint, status, created_at:registered_at, reviewed_at"
-    )
-    .order("registered_at", { ascending: false });
-
-  if (error) throw new Error(`fetchPendingUsers: ${error.message}`);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return ((data ?? []) as any[]).map((p) => ({
-    id:              p.id as string,
-    hwid:            p.hwid as string,
-    full_name:       p.full_name ?? null,
-    whop_username:   p.whop_username ?? null,
-    social_accounts: Array.isArray(p.social_accounts) ? p.social_accounts : null,
-    gemini_key_hint: p.gemini_key_hint ?? null,
-    status:          p.status as PendingUser["status"],
-    created_at:      p.created_at as string,
-    reviewed_at:     p.reviewed_at ?? null,
-  } satisfies PendingUser));
 }
 
 // ── Clips ─────────────────────────────────────────────────────────────────────
