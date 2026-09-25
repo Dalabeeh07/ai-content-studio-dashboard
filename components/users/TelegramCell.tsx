@@ -20,7 +20,7 @@ function until(iso: string | null): string {
   const ms = new Date(iso).getTime() - Date.now();
   if (ms <= 0) return "expired";
   const h = Math.floor(ms / 3_600_000);
-  return h < 48 ? `in ${Math.max(1, h)}h` : `in ${Math.floor(h / 24)}d`;
+  return h < 48 ? `in ${Math.max(1, h)}h` : `in ${Math.round(h / 24)}d`;
 }
 
 function CopyButton({ value, label }: { value: string; label: string }) {
