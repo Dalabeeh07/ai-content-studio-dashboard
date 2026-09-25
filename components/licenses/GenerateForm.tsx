@@ -28,6 +28,16 @@ function CopyableKey({ licenseKey }: { licenseKey: string }) {
   );
 }
 
+// Declared at module scope: a component defined inside another component's
+// body is re-created on every render, which resets its state.
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#7070a0] mb-1.5">
+      {children}
+    </label>
+  );
+}
+
 export default function GenerateForm() {
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
@@ -55,12 +65,6 @@ export default function GenerateForm() {
   const inputCls =
     "w-full bg-[#0f0f1c] border border-[#1e1e38] rounded-lg px-3 py-2 text-sm text-[#e8e8f0]" +
     " placeholder-[#3a3a60] focus:outline-none focus:border-[#4a9eff] transition-colors";
-
-  const Label = ({ children }: { children: React.ReactNode }) => (
-    <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#7070a0] mb-1.5">
-      {children}
-    </label>
-  );
 
   return (
     <div className="bg-[#141428] border border-[#1e1e38] rounded-2xl p-6">
