@@ -80,11 +80,19 @@ function FlagChips({ row }: { row: SubmissionRow }) {
 function LinkCell({ url }: { url: string }) {
   const [state, copy] = useCopyToClipboard();
   const truncated = url.length > 46 ? `${url.slice(0, 46)}…` : url;
+  // Desktop-app rows come through an anon-callable RPC that accepts ANY text as
+  // the URL, so only http(s) values become clickable; anything else (e.g. a
+  // "javascript:" string) is shown as inert text and can still be copied.
+  const openable = /^https?:\/\//i.test(url);
   return (
     <div className="flex items-center gap-1.5">
-      <a href={url} target="_blank" rel="noopener noreferrer" className="text-brand-blue hover:underline text-xs break-all" title={url}>
-        {truncated}
-      </a>
+      {openable ? (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="text-brand-blue hover:underline text-xs break-all" title={url}>
+          {truncated}
+        </a>
+      ) : (
+        <span className="text-[#7070a0] text-xs break-all" title={`${url} (not an http/https link - not clickable)`}>{truncated}</span>
+      )}
       <button
         onClick={() => copy(url)}
         title="Copy link"

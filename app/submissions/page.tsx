@@ -31,6 +31,9 @@ export default async function SubmissionsPage({ searchParams }: { searchParams: 
     ]);
   } catch (err) {
     fetchError = err instanceof Error ? err.message : "Unknown error";
+    if (/schema cache|does not exist|could not find/i.test(fetchError) && !/migration 041/i.test(fetchError)) {
+      fetchError += " - has migration 041_telegram_link_intake.sql been applied in the Supabase SQL Editor?";
+    }
   }
 
   const updatedAt = new Date().toLocaleTimeString("en-US", {

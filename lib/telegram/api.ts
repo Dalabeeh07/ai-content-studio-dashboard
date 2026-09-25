@@ -86,9 +86,18 @@ export function createBotApi(cfg: BotApiConfig): BotApi {
   };
 }
 
+// TELEGRAM_API_BASE exists ONLY so tests can point the bot at a local fake
+// Telegram. It is honoured for loopback addresses and nothing else: a stray or
+// malicious value must never be able to send the real bot token to another host.
+const LOOPBACK_BASE = /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/;
+
 export function botApiFromEnv(): BotApi {
+  const override = process.env.TELEGRAM_API_BASE ?? "";
+  if (override && !LOOPBACK_BASE.test(override)) {
+    console.error("telegram: ignoring TELEGRAM_API_BASE (only http://127.0.0.1 / http://localhost is honoured)");
+  }
   return createBotApi({
     token: process.env.TELEGRAM_BOT_TOKEN ?? "",
-    baseUrl: process.env.TELEGRAM_API_BASE || undefined,
+    baseUrl: override && LOOPBACK_BASE.test(override) ? override : undefined,
   });
 }
