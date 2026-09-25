@@ -10,10 +10,17 @@ import { isValidSession } from "@/lib/session-store";
 // cleanup never actually ran.
 const PUBLIC_PATHS = ["/login", "/api/auth", "/api/cron"];
 
+// The Telegram webhook is public for the same reason /api/cron is: Telegram
+// has no admin session cookie, only the X-Telegram-Bot-Api-Secret-Token
+// header the route itself verifies (constant-time, before any DB access -
+// see lib/telegram/webhook.ts). Matched EXACTLY rather than by prefix so no
+// sibling route can ever be made public by accident.
+const PUBLIC_EXACT_PATHS = ["/api/telegram/webhook"];
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  if (PUBLIC_EXACT_PATHS.includes(pathname) || PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
