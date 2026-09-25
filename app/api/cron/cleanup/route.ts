@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { serverClient } from "@/lib/supabase";
+import { RETENTION_DAYS } from "@/lib/telegram/config";
 
 // Deletes stale rows from admin_login_attempts and admin_sessions -
 // neither table has ever had a cleanup mechanism (confirmed via a full
@@ -58,9 +59,23 @@ export async function GET(req: NextRequest) {
     .lt("expires_at", nowIso)
     .select("id");
 
-  if (attemptsError || sessionsError) {
+  // Telegram intake retention (migration 041). tg_cleanup deletes only rows
+  // past their retention (see RETENTION_DAYS in lib/telegram/config.ts):
+  // telegram_updates 3d, rate-limit windows 2d, picker tokens 1d after expiry,
+  // link codes 30d after use/expiry, revoked links 90d. video_submissions
+  // themselves are business records and are never touched here. Its failure
+  // is reported but does not stop the two cleanups above from having run.
+  const { data: telegramDeleted, error: telegramError } = await db.rpc("tg_cleanup", {
+    p_updates_days: RETENTION_DAYS.updates,
+    p_rate_days: RETENTION_DAYS.rateLimits,
+    p_choices_days: RETENTION_DAYS.pendingChoices,
+    p_codes_days: RETENTION_DAYS.linkCodes,
+    p_links_days: RETENTION_DAYS.revokedLinks,
+  });
+
+  if (attemptsError || sessionsError || telegramError) {
     return NextResponse.json(
-      { ok: false, error: attemptsError?.message ?? sessionsError?.message },
+      { ok: false, error: attemptsError?.message ?? sessionsError?.message ?? telegramError?.message },
       { status: 500 }
     );
   }
@@ -70,6 +85,7 @@ export async function GET(req: NextRequest) {
     deleted: {
       admin_login_attempts: deletedAttempts?.length ?? 0,
       admin_sessions: deletedSessions?.length ?? 0,
+      telegram: telegramDeleted ?? {},
     },
   });
 }
