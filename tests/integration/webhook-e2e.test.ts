@@ -90,7 +90,9 @@ const tt = () => `https://www.tiktok.com/@creator/video/73${String(++ttSeq).padS
 test("missing / wrong secret => 401, and NO row in any table changes", async () => {
   const before = await tableCounts();
   const u = msg(nextTgId(), "/start");
-  for (const secret of [null, "", "wrong", SECRET.slice(0, -1), SECRET + "x", SECRET.toLowerCase(), " " + SECRET]) {
+  // (A leading/trailing space is NOT tested here: HTTP strips it from header values, so " secret" IS the secret on
+  // the wire. The function-level check rejects it - see tests/unit/codes-security.test.ts.)
+  for (const secret of [null, "", "wrong", SECRET.slice(0, -1), SECRET + "x", SECRET.toLowerCase(), "X" + SECRET]) {
     const r = await send(u, secret);
     assert.equal(r.status, 401, `secret=${JSON.stringify(secret)}: got ${r.status}`);
   }
@@ -114,8 +116,9 @@ test("oversized body => 413 (valid secret), nothing written; body limit holds ev
   // A correct server answers 413 and/or drops the connection mid-upload (undici reports the latter as a refused fetch).
   const a = await postOversized(hook(), big, H());
   assert.ok(a === 413 || a === "refused", `oversized body: ${a}`);
-  const b = await postOversized(hook(), big, { ...H(), "Content-Length": "20" });
-  assert.ok(b === 413 || b === "refused" || b === 400 || b === 200, `lying content-length: ${b}`);
+  // (A lying Content-Length cannot be sent meaningfully over real HTTP/1.1 - the server just times the request out
+  // itself (408 after ~80s) - and Vercel's edge never forwards one. The streaming cap that makes it harmless is
+  // proven with a lying header at the Request level in tests/sql/handler.test.ts and tests/unit/codes-security.test.ts.)
   assert.deepEqual(await tableCounts(), before);
 });
 

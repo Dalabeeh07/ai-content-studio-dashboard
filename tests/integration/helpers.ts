@@ -101,7 +101,19 @@ export async function cleanup(): Promise<void> {
   await del("telegram_users", db.from("telegram_users").delete().gte("telegram_user_id", TEST_ID_BASE));
   await del("telegram_updates", db.from("telegram_updates").delete().gte("update_id", TEST_ID_BASE));
   await del("telegram_pending_choices", db.from("telegram_pending_choices").delete().gte("telegram_user_id", TEST_ID_BASE));
-  await del("telegram_rate_limits", db.from("telegram_rate_limits").delete().or(`key.like.*:${TEST_ID_BASE.toString().slice(0, 4)}*,key.like.${TEST_PREFIX}*`));
+  // Rate-limit keys look like msg:<id>, urls:day:<id>, urls:win:<id>, linkatt:<id>. Delete EXACTLY the ones whose
+  // trailing Telegram id is in the test range (a string-prefix LIKE could touch a real user's counters).
+  {
+    const { data, error } = await db.from("telegram_rate_limits").select("key").limit(20000);
+    if (error) throw new Error(`cleanup telegram_rate_limits(select): ${error.message}`);
+    const mine = (data ?? []).map((r) => r.key as string).filter((k) => {
+      const m = /^(?:msg|urls:day|urls:win|linkatt):(\d+)$/.exec(k);
+      return (m !== null && Number(m[1]) >= TEST_ID_BASE) || k.startsWith(TEST_PREFIX);
+    });
+    for (let i = 0; i < mine.length; i += 100) {
+      await del("telegram_rate_limits", db.from("telegram_rate_limits").delete().in("key", mine.slice(i, i + 100)));
+    }
+  }
   // The global /link attempt bucket is a rolling counter the /link tests touch; resetting it is harmless.
   await del("telegram_rate_limits(global)", db.from("telegram_rate_limits").delete().eq("key", "linkatt:global"));
   await del("campaign_exports", db.from("campaign_exports").delete().like("hwid", `${TEST_PREFIX}%`));

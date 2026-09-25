@@ -33,24 +33,26 @@ after(async () => {
   assert.deepEqual(after, baseline, "test data must leave every table exactly as it was");
 });
 
-const NEW_TABLES: Record<string, Record<string, unknown>> = {
-  telegram_users: { telegram_user_id: 9_999_999_001, username: "x" },
-  telegram_links: { telegram_user_id: 9_999_999_001, hwid: "TEST_TG_probe" },
-  telegram_link_codes: { code_hash: "TEST_TG_probe", hwid: "TEST_TG_probe", expires_at: "2099-01-01T00:00:00Z" },
-  telegram_updates: { update_id: 9_999_999_001 },
-  telegram_rate_limits: { key: "TEST_TG_probe", count: 1 },
-  telegram_pending_choices: { token: "TEST_TG_probe", kind: "unlink", telegram_user_id: 1, chat_id: 1, expires_at: "2099-01-01T00:00:00Z" },
-  telegram_duplicate_attempts: { submission_id: "00000000-0000-0000-0000-000000000000", telegram_user_id: 1, update_id: 1, raw_url: "x" },
+// `filter` must be a TYPE-VALID literal for the column: an invalid one (e.g. "does-not-exist"
+// for a bigint) fails at parse time with 400/22P02 BEFORE the privilege check ever runs, which
+// would make the probe test the wrong thing.
+const NEW_TABLES: Record<string, { row: Record<string, unknown>; col: string; filter: string }> = {
+  telegram_users: { row: { telegram_user_id: 9_999_999_001, username: "x" }, col: "username", filter: "telegram_user_id=eq.-1" },
+  telegram_links: { row: { telegram_user_id: 9_999_999_001, hwid: "TEST_TG_probe" }, col: "hwid", filter: "telegram_user_id=eq.-1" },
+  telegram_link_codes: { row: { code_hash: "TEST_TG_probe", hwid: "TEST_TG_probe", expires_at: "2099-01-01T00:00:00Z" }, col: "hwid", filter: "code_hash=eq.does-not-exist" },
+  telegram_updates: { row: { update_id: 9_999_999_001 }, col: "status", filter: "update_id=eq.-1" },
+  telegram_rate_limits: { row: { key: "TEST_TG_probe", count: 1 }, col: "count", filter: "key=eq.does-not-exist" },
+  telegram_pending_choices: { row: { token: "TEST_TG_probe", kind: "unlink", telegram_user_id: 1, chat_id: 1, expires_at: "2099-01-01T00:00:00Z" }, col: "kind", filter: "token=eq.does-not-exist" },
+  telegram_duplicate_attempts: { row: { submission_id: "00000000-0000-0000-0000-000000000000", telegram_user_id: 1, update_id: 1, raw_url: "x" }, col: "raw_url", filter: "telegram_user_id=eq.-1" },
 };
 
 test("anon key is DENIED (401/42501) on every new table for SELECT, INSERT, PATCH and DELETE (real bodies)", async () => {
-  for (const [table, row] of Object.entries(NEW_TABLES)) {
-    const col = Object.keys(row)[0];
+  for (const [table, { row, col, filter }] of Object.entries(NEW_TABLES)) {
     const results = {
       select: await raw("anon", "GET", `${table}?select=*&limit=1`),
       insert: await raw("anon", "POST", table, row),
-      patch: await raw("anon", "PATCH", `${table}?${col}=eq.does-not-exist`, { [col]: row[col] }),
-      delete: await raw("anon", "DELETE", `${table}?${col}=eq.does-not-exist`),
+      patch: await raw("anon", "PATCH", `${table}?${filter}`, { [col]: row[col] }),
+      delete: await raw("anon", "DELETE", `${table}?${filter}`),
     };
     for (const [op, r] of Object.entries(results)) {
       assert.equal(r.status, 401, `${table} ${op}: expected 401, got ${r.status} ${r.text.slice(0, 120)}`);
@@ -194,7 +196,7 @@ test("Realtime: video_submissions is published, and a Telegram-shaped INSERT rea
           void svc().from("video_submissions").insert({
             user_id: u.id, hardware_id: u.hwid, platform: "tiktok", video_url: "https://www.tiktok.com/@t/video/1", username: "u",
             source: "telegram", telegram_user_id: nextTgId(), canonical_url: `https://www.tiktok.com/@/video/${uniq("rt")}`, flags: ["short_link"],
-          });
+          }).then(({ error }) => { if (error) { clearTimeout(timer); reject(new Error(`the test INSERT itself failed: ${error.message}`)); } });
         }
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") { clearTimeout(timer); reject(new Error(`realtime channel ${status}`)); }
       });

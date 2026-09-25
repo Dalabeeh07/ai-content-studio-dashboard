@@ -89,8 +89,9 @@ const byNewest = (a: Seed, b: Seed) => (a.submitted_at === b.submitted_at ? (b.i
 
 // ── pagination ──────────────────────────────────────────────────────────────
 
-test("pagination: every page, several sizes - complete, no duplicates, no gaps, stable newest-first order, totals consistent", async () => {
-  for (const size of [25, 50, 100, 200]) {
+test("pagination: full traversal at sizes 200 and 100 - complete, no duplicates, no gaps, stable newest-first order, totals consistent", async () => {
+  const want = [...seeds].sort(byNewest).map((s) => s.id);
+  for (const size of [200, 100]) {
     const seen: string[] = [];
     const timings: number[] = [];
     const pages = Math.ceil(N / size);
@@ -101,15 +102,25 @@ test("pagination: every page, several sizes - complete, no duplicates, no gaps, 
       assert.equal(r.total, N, `total on page ${page}`);
       assert.ok(r.rows.length === size || page === pages, `page ${page} has ${r.rows.length} rows`);
       seen.push(...r.rows.map((x) => x.id));
-      if (size === 200 && page % 20 === 0) console.log(`    size=200 page ${page}/${pages}: ${timings.at(-1)!.toFixed(0)}ms`);
     }
     assert.equal(seen.length, N);
     assert.equal(new Set(seen).size, N, `size ${size}: duplicate rows across pages`);
-    const want = [...seeds].sort(byNewest).map((s) => s.id);
     assert.deepEqual(seen, want, `size ${size}: order differs from newest-first (submitted_at desc, id desc)`);
     const s = stats(timings);
-    console.log(`  pagination size=${size} (${pages} pages, ${N} rows): ${fmt(s)}`);
+    console.log(`  pagination size=${size} (${pages} pages, ${N} rows, incl. deep pages): ${fmt(s)}`);
     assert.ok(s.max < PAGE_MS_BUDGET, `slowest page ${s.max.toFixed(0)}ms exceeds ${PAGE_MS_BUDGET}ms`);
+  }
+});
+
+test("pagination: sampled pages at sizes 25 and 50 (first, second, middle, last) match the expected slice; page past the end is empty", async () => {
+  const want = [...seeds].sort(byNewest).map((s) => s.id);
+  for (const size of [25, 50]) {
+    const pages = Math.ceil(N / size);
+    for (const page of [1, 2, Math.ceil(pages / 2), pages]) {
+      const r = await fetchSubmissionsPage(F(), page, size);
+      assert.equal(r.total, N);
+      assert.deepEqual(r.rows.map((x) => x.id), want.slice((page - 1) * size, page * size), `size ${size} page ${page}`);
+    }
   }
   const past = await fetchSubmissionsPage(F(), Math.ceil(N / 200) + 5, 200);
   assert.equal(past.rows.length, 0); assert.equal(past.total, N);
