@@ -3,8 +3,8 @@ import { ADMIN_SHARE, USER_SHARE } from "./constants";
 import type {
   Campaign, CampaignClip, CampaignCompliance, CampaignHook,
   CampaignHookStatusRow, CampaignTermsLogRow, CampaignVideo, ClipRow,
-  EarningsUserRow, MonthlyBar, SubmissionRow, SummaryStats,
-  UserRow,
+  EarningsUserRow, MonthlyBar, SummaryStats,
+  TelegramStatus, UserRow,
 } from "./types";
 
 export async function fetchUsers(): Promise<UserRow[]> {
@@ -108,40 +108,9 @@ export async function fetchClips(): Promise<ClipRow[]> {
   });
 }
 
-// ── Video submissions (revenue-share) ──────────────────────────────────────────
-
-export async function fetchSubmissions(): Promise<SubmissionRow[]> {
-  const db = serverClient();
-  if (!db) return [];
-
-  const { data, error } = await db
-    .from("video_submissions")
-    .select(
-      "id, user_id, hardware_id, platform, video_url, username, status, " +
-      "whop_confirmed, submitted_at, updated_at, users(email)"
-    )
-    .order("submitted_at", { ascending: false });
-
-  if (error) throw new Error(`fetchSubmissions: ${error.message}`);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return ((data ?? []) as any[]).map((s) => {
-    const uRow = Array.isArray(s.users) ? s.users[0] : s.users;
-    return {
-      id:             s.id as string,
-      user_id:        s.user_id as string,
-      hardware_id:    s.hardware_id as string,
-      user_email:     (uRow as { email: string | null } | null)?.email ?? null,
-      platform:       s.platform as SubmissionRow["platform"],
-      video_url:      s.video_url as string,
-      username:       s.username as string,
-      status:         s.status as SubmissionRow["status"],
-      whop_confirmed: Boolean(s.whop_confirmed),
-      submitted_at:   s.submitted_at as string,
-      updated_at:     s.updated_at as string,
-    } satisfies SubmissionRow;
-  });
-}
+// Video submissions (revenue-share + Telegram intake) live in
+// lib/submissions/query.ts: they are paginated server-side, so nothing here
+// loads the whole table anymore.
 
 // ── Earnings ──────────────────────────────────────────────────────────────────
 
@@ -476,4 +445,48 @@ export async function fetchCampaignCompliance(campaignId: string): Promise<Campa
   const distinct = new Set(log.map((r) => r.user_id ?? r.hwid));
 
   return { openedCount: distinct.size, exportedCount: exportedCount ?? 0, log };
+}
+
+// ── Telegram link status per device (migration 041) ─────────────────────────
+
+/**
+ * hwid -> Telegram link state for the Users page. Never throws: if the
+ * migration has not been applied yet the page still renders, with `error`
+ * set so it can say why the Telegram column is empty.
+ */
+export async function fetchTelegramStatus(): Promise<{ byHwid: Record<string, TelegramStatus>; error: string | null }> {
+  const db = serverClient();
+  if (!db) return { byHwid: {}, error: null };
+  const byHwid: Record<string, TelegramStatus> = {};
+  const blank = (): TelegramStatus => ({ linked: false, telegramUserId: null, username: null, linkedAt: null, pendingCodeExpiresAt: null });
+
+  const { data: links, error: lErr } = await db
+    .from("telegram_links")
+    .select("hwid, telegram_user_id, linked_at, telegram_users(username)")
+    .is("revoked_at", null)
+    .limit(5000);
+  if (lErr) return { byHwid, error: lErr.message };
+
+  for (const l of links ?? []) {
+    const u = Array.isArray(l.telegram_users) ? l.telegram_users[0] : l.telegram_users;
+    byHwid[l.hwid as string] = {
+      ...blank(), linked: true, telegramUserId: Number(l.telegram_user_id),
+      username: (u as { username: string | null } | null)?.username ?? null, linkedAt: l.linked_at as string,
+    };
+  }
+
+  const { data: codes, error: cErr } = await db
+    .from("telegram_link_codes")
+    .select("hwid, expires_at")
+    .is("used_at", null)
+    .is("revoked_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .limit(5000);
+  if (cErr) return { byHwid, error: cErr.message };
+  for (const c of codes ?? []) {
+    const cur = byHwid[c.hwid as string] ?? blank();
+    cur.pendingCodeExpiresAt = c.expires_at as string;
+    byHwid[c.hwid as string] = cur;
+  }
+  return { byHwid, error: null };
 }

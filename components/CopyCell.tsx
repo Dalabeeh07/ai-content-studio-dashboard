@@ -26,6 +26,20 @@ function legacyCopy(value: string): boolean {
   }
 }
 
+/** Promise-returning copy for flows that fetch text first (bulk "copy links").
+ * Resolves true on success, false if both clipboard paths were refused. */
+export async function copyTextToClipboard(value: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    /* fall through to the legacy path */
+  }
+  return legacyCopy(value);
+}
+
 /** Copies `value` to the clipboard and reports back a brief "copied" (or
  * "failed") state that clears itself after `resetMs`. Shared by every
  * click-to-copy control in the dashboard (UsersTable's hwid/license-key

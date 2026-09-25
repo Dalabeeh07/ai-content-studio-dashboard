@@ -5,7 +5,8 @@ import { Fragment, useEffect, useState, useTransition } from "react";
 import { browserClient } from "@/lib/supabase";
 import { CopyCell } from "@/components/CopyCell";
 import { updateDailyLimit, grantDailyBonus } from "@/app/users/actions";
-import type { UserRow, LicenseStatus, SocialAccount } from "@/lib/types";
+import TelegramCell from "@/components/users/TelegramCell";
+import type { UserRow, LicenseStatus, SocialAccount, TelegramStatus } from "@/lib/types";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -346,8 +347,10 @@ function DailyLimitCell({ user }: { user: UserRow }) {
 
 export default function UsersTable({
   users: initialUsers,
+  telegram,
 }: {
   users: UserRow[];
+  telegram: Record<string, TelegramStatus>;
 }) {
   const [users, setUsers] = useState<UserRow[]>(initialUsers);
   const [notifyRowId, setNotifyRowId] = useState<string | null>(null);
@@ -457,6 +460,7 @@ export default function UsersTable({
               <th className={TH}>Clips (30d)</th>
               <th className={TH}>Last Active</th>
               <th className={TH}>Social</th>
+              <th className={TH}>Telegram</th>
               <th className={TH}>Daily Limit</th>
               <th className={TH}>Status</th>
               <th className={TH}>Actions</th>
@@ -465,7 +469,7 @@ export default function UsersTable({
           <tbody className="bg-[#08080f] divide-y divide-[#1e1e38]">
             {users.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-12 text-center text-[#7070a0] text-sm">
+                <td colSpan={12} className="px-4 py-12 text-center text-[#7070a0] text-sm">
                   No users yet
                 </td>
               </tr>
@@ -544,6 +548,11 @@ export default function UsersTable({
                     <SocialBadges accounts={u.social_accounts} />
                   </td>
 
+                  {/* Telegram link (migration 041) */}
+                  <td className={TD}>
+                    <TelegramCell user={u} status={u.hwid ? telegram[u.hwid] : undefined} />
+                  </td>
+
                   {/* Daily export limit (migration 027) */}
                   <td className={TD}>
                     <DailyLimitCell user={u} />
@@ -589,7 +598,7 @@ export default function UsersTable({
                 </tr>
                 {notifyRowId === u.id && (
                   <tr className="bg-[#0f0f1c]">
-                    <td colSpan={11} className="px-4 py-3">
+                    <td colSpan={12} className="px-4 py-3">
                       <InlineNotifyForm
                         hwid={u.hwid ?? ""}
                         onClose={() => setNotifyRowId(null)}

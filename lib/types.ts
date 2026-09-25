@@ -161,12 +161,23 @@ export interface ClipRow {
   earnings: number | null;
 }
 
-export type SubmissionPlatform = "youtube" | "instagram" | "tiktok";
+// "x" was added by migration 041 (Telegram intake); the desktop app's own
+// submit_video_link RPC still only writes the original three.
+export type SubmissionPlatform = "youtube" | "instagram" | "tiktok" | "x";
 // Review/verification lifecycle only - payment itself is tracked on
 // clips.payout_status via the Earnings page, and only there (see
 // supabase/migrations/009_video_submissions.sql for why "paid" was
 // removed from here).
 export type SubmissionStatus = "pending_review" | "verified" | "disputed";
+
+// 'telegram' rows come from @PlovikaLinksBot (migration 041); the founder
+// hand-submits those links to Whop. 'app' rows come from the desktop app.
+export type SubmissionSource = "app" | "telegram";
+
+export interface DuplicateAttempt {
+  who: string;   // email, or "User #<hwid prefix>"
+  at: string;
+}
 
 export interface SubmissionRow {
   id: string;
@@ -177,9 +188,36 @@ export interface SubmissionRow {
   video_url: string;
   username: string;
   status: SubmissionStatus;
-  whop_confirmed: boolean;
+  whop_confirmed: boolean;       // founder verified the Whop-side submission exists (migration 009)
   submitted_at: string;
   updated_at: string;
+  // migration 041
+  source: SubmissionSource;
+  telegram_user_id: number | null;
+  telegram_username: string | null;   // joined for display
+  campaign_id: string | null;
+  campaign_name: string | null;       // joined for display
+  canonical_url: string | null;
+  whop_submitted_at: string | null;   // founder hand-submitted this link to Whop
+  flags: string[];                    // duplicate_of_other_user | license_inactive | short_link
+  dup_attempts: DuplicateAttempt[];   // who else tried to submit this same link
+}
+
+export interface PendingCount {
+  campaign_id: string | null;
+  campaign_name: string | null;
+  platform: SubmissionPlatform;
+  pending: number;
+}
+
+// ── Telegram link status (Users page) ────────────────────────────────────────
+
+export interface TelegramStatus {
+  linked: boolean;
+  telegramUserId: number | null;
+  username: string | null;
+  linkedAt: string | null;
+  pendingCodeExpiresAt: string | null;  // an unused, unexpired link code exists
 }
 
 export interface EarningsUserRow {

@@ -1,8 +1,8 @@
-import { fetchUsers, fetchSummary } from "@/lib/queries";
+import { fetchUsers, fetchSummary, fetchTelegramStatus } from "@/lib/queries";
 import SummaryCards from "@/components/users/SummaryCards";
 import UsersTable from "@/components/users/UsersTable";
 import RefreshButton from "@/components/users/RefreshButton";
-import type { UserRow, SummaryStats } from "@/lib/types";
+import type { UserRow, SummaryStats, TelegramStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";   // always fetch fresh data
 
@@ -10,10 +10,14 @@ export default async function UsersOverviewPage() {
   let users: UserRow[];
   let stats: SummaryStats;
   let fetchError: string | null = null;
+  let telegram: Record<string, TelegramStatus> = {};
 
   try {
     users = await fetchUsers();
     stats = await fetchSummary(users);
+    // Never throws (an unapplied migration just leaves the column empty; the
+    // /users page is where that is explained).
+    telegram = (await fetchTelegramStatus()).byHwid;
   } catch (err) {
     fetchError = err instanceof Error ? err.message : "Unknown error";
     users = [];
@@ -51,7 +55,7 @@ export default async function UsersOverviewPage() {
       <SummaryCards stats={stats} />
 
       {/* Table */}
-      <UsersTable users={users} />
+      <UsersTable users={users} telegram={telegram} />
     </div>
   );
 }
