@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_FILTERS, cleanQuery, filtersToParams, hasActiveFilters, parsePageParams, sanitizeFilters, validDate, validIso,
 } from "../../lib/submissions/filters";
+import { applyFilters } from "../../lib/submissions/query";
 import { TxtGrouper, csvCell, csvHeaderLine, csvLine, sortForExport, txtFromOrderedRows, type ExportRow } from "../../lib/submissions/export";
 
 const UUID = "3f2b8c1e-7a4d-4e6f-9b1a-0c5d2e8f7a61";
@@ -139,5 +140,41 @@ test("sortForExport matches the server order: campaign name, unassigned last, th
   ]);
   assert.deepEqual(out.map((r) => `${r.campaign}|${r.platform}|${r.submittedAt}`), [
     "Alpha|instagram|2026-01-04", "Alpha|instagram|2026-01-05", "Alpha|tiktok|2026-01-03", "Beta|tiktok|2026-01-02", "null|x|2026-01-01",
+  ]);
+});
+
+// A recording stand-in for the Supabase filter builder.
+function recorder() {
+  const calls: { m: string; a: unknown[] }[] = [];
+  const fake: unknown = new Proxy({}, { get: (_t, m) => (...a: unknown[]) => { calls.push({ m: String(m), a }); return fake; } });
+  return { fake, calls };
+}
+
+test("applyFilters is safe on its OWN: hostile free text cannot inject PostgREST syntax into the or=(...) expression", () => {
+  for (const evil of ["a,b(c)", "x),id.eq.1,(y", "video_url.ilike.*a*,or(status.eq.verified)", "'; drop table t;--"]) {
+    const { fake, calls } = recorder();
+    applyFilters(fake, { ...DEFAULT_FILTERS, q: evil }, { userIds: [UUID], telegramIds: [42] });
+    const or = calls.find((c) => c.m === "or")!;
+    assert.ok(or, `no or() call for ${JSON.stringify(evil)}`);
+    const expr = or.a[0] as string;
+    // Exactly the five structural terms (3 text columns + user_id.in + telegram_user_id.in), regardless of q.
+    const terms = expr.split(/,(?=(?:video_url|username|hardware_id|user_id|telegram_user_id)\.)/);
+    assert.equal(terms.length, 5, `${JSON.stringify(evil)} -> ${expr}`);
+    for (const t of terms.slice(0, 3)) assert.ok(!/[(),*%]/.test(t.replace(/\.ilike\.\*/, "").replace(/\*$/, "")), `syntax char leaked into: ${t}`);
+  }
+  const { fake, calls } = recorder();
+  applyFilters(fake, { ...DEFAULT_FILTERS, q: "*%,(" }, { userIds: [], telegramIds: [] });
+  assert.equal(calls.some((c) => c.m === "or"), false, "a query that sanitises to nothing adds no filter");
+});
+
+test("applyFilters: every filter maps to exactly the expected builder call (and asOf / pendingOnly are applied)", () => {
+  const { fake, calls } = recorder();
+  applyFilters(fake, sanitizeFilters({ source: "telegram", status: "verified", campaign: UUID, platform: "x", whop: "pending", flag: "any", from: "2026-09-01", to: "2026-09-30", user: UUID }),
+    { userIds: [], telegramIds: [] }, { asOf: "2026-09-25T00:00:00.000Z" });
+  const s = calls.map((c) => `${c.m}(${c.a.map((x) => JSON.stringify(x)).join(",")})`);
+  assert.deepEqual(s, [
+    'eq("source","telegram")', 'eq("status","verified")', `eq("campaign_id","${UUID}")`, 'eq("platform","x")', 'is("whop_submitted_at",null)',
+    'overlaps("flags",["duplicate_of_other_user","license_inactive"])', 'gte("submitted_at","2026-09-01T00:00:00.000Z")', 'lt("submitted_at","2026-10-01T00:00:00.000Z")',
+    `eq("user_id","${UUID}")`, 'lte("submitted_at","2026-09-25T00:00:00.000Z")',
   ]);
 });

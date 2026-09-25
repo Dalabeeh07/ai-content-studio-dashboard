@@ -168,9 +168,14 @@ test("free-text search: url fragment, handle, user email, and injection-shaped i
   assert.ok(r.rows.some((x) => x.id === one.id));
   const email = await fetchSubmissionsPage({ ...DEFAULT_FILTERS, q: user.hwid.toLowerCase() }, 1, 50);
   assert.ok(email.total >= N, "searching the user's email must find their rows");
-  for (const evil of ["a,b(c)", "x*%", "id.eq.1,or(status.eq.verified)", "\\", "%00", "'; drop table video_submissions;--"]) {
-    const res = await fetchSubmissionsPage(F({ q: evil }), 1, 50); // must not throw or widen the result
-    assert.ok(res.total < N, `q=${evil} widened to ${res.total}`);
+  // Hostile input must never throw and never return MORE than the base (per-user) filter. Inputs that sanitise
+  // to an empty string simply mean "no search"; inputs whose residue can match nothing must return 0.
+  for (const evil of ["zzqq,(zzqq)", "zzqq*%", "zzqq.eq.1,or(status.eq.verified)", "\\", "%00", "'; drop table video_submissions;--"]) {
+    const res = await fetchSubmissionsPage(F({ q: evil }), 1, 50); // must not throw
+    assert.ok(res.total <= N, `q=${evil} widened to ${res.total}`);
+  }
+  for (const nothing of ["zzqq,(zzqq)", "zzqq*%", "zzqq.eq.1,or(status.eq.verified)"]) {
+    assert.equal((await fetchSubmissionsPage(F({ q: nothing }), 1, 50)).total, 0, `q=${nothing}`);
   }
 });
 
@@ -399,7 +404,7 @@ test("two concurrent marks of the same rows never double-stamp: total updated ==
 });
 
 test("unmark by filter + assign campaign (set, clear, nonexistent, deleted) with honest counts", async () => {
-  const ids = pendingIds(12, (s) => s.source === "telegram" && s.campaign_id === null);
+  const ids = pendingIds(12, (s) => s.source === "telegram" && s.campaign_id === null && s.whop_submitted_at === null); // unmarked rows, so mark() updates all 12
   const set = await assignCampaignCore(svc(), { mode: "ids", ids }, campaigns[3].id);
   assert.deepEqual([set.ok, set.updated], [true, ids.length]);
   const { data } = await svc().from("video_submissions").select("campaign_id").in("id", ids);

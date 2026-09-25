@@ -1,6 +1,6 @@
 import { serverClient } from "@/lib/supabase";
 import type { DuplicateAttempt, PendingCount, SubmissionPlatform, SubmissionRow } from "@/lib/types";
-import type { SubmissionFilters } from "./filters";
+import { cleanQuery, type SubmissionFilters } from "./filters";
 
 // Server-only data access for the Submissions page, export route and bulk
 // actions. Every entry point funnels through applyFilters(), so the visible
@@ -34,8 +34,9 @@ const escapeLike = (s: string) => s.replace(/[\\%_]/g, (m) => `\\${m}`);
  * (user email, telegram username) so applyFilters can stay synchronous. */
 export async function buildFilterContext(db: Db, f: SubmissionFilters): Promise<FilterContext> {
   const ctx: FilterContext = { userIds: [], telegramIds: [] };
-  if (!f.q) return ctx;
-  const pattern = `%${escapeLike(f.q)}%`;
+  const q = cleanQuery(f.q); // never trust the caller: this text reaches SQL LIKE patterns
+  if (!q) return ctx;
+  const pattern = `%${escapeLike(q)}%`;
   const [u, t] = await Promise.all([
     db.from("users").select("id").ilike("email", pattern).limit(50),
     db.from("telegram_users").select("telegram_user_id").ilike("username", pattern).limit(50),
@@ -73,8 +74,11 @@ export function applyFilters<T>(query: T, f: SubmissionFilters, ctx: FilterConte
     q = q.lt("submitted_at", next.toISOString());
   }
   if (f.user) q = q.eq("user_id", f.user);
-  if (f.q) {
-    const parts = [`video_url.ilike.*${f.q}*`, `username.ilike.*${f.q}*`, `hardware_id.ilike.*${f.q}*`];
+  // f.q is embedded in a PostgREST `or=(...)` expression, where "," "(" ")" "*" are SYNTAX. Callers already
+  // sanitise (sanitizeFilters), but this function must be safe on its own: cleanQuery is idempotent.
+  const text = cleanQuery(f.q);
+  if (text) {
+    const parts = [`video_url.ilike.*${text}*`, `username.ilike.*${text}*`, `hardware_id.ilike.*${text}*`];
     if (ctx.userIds.length) parts.push(`user_id.in.(${ctx.userIds.join(",")})`);
     if (ctx.telegramIds.length) parts.push(`telegram_user_id.in.(${ctx.telegramIds.join(",")})`);
     q = q.or(parts.join(","));
@@ -117,7 +121,17 @@ export async function fetchSubmissionsPage(f: SubmissionFilters, page: number, s
     .range(from, from + size - 1);
 
   if (error) {
-    const hint = /does not exist|column|relationship|schema cache/i.test(error.message)
+    // PostgREST answers 416 / PGRST103 when the requested range starts past the last row (a hand-edited
+    // ?page=999, or a filter narrowed while on a later page). That is a normal state, not a failure:
+    // return an empty page with the true total so the UI can offer "go to the last page".
+    if (error.code === "PGRST103" || /range not satisfiable/i.test(error.message)) {
+      const { count: total, error: countErr } = await applyFilters(
+        db.from("video_submissions").select("id", { count: "exact", head: true }), f, ctx, { asOf },
+      );
+      if (countErr) throw new Error(`fetchSubmissionsPage: ${countErr.message}`);
+      return { rows: [], total: total ?? 0, page, size, asOf };
+    }
+    const hint = /does not exist|relationship|schema cache|could not find/i.test(error.message)
       ? " - has migration 041_telegram_link_intake.sql been applied in the Supabase SQL Editor?"
       : "";
     throw new Error(`fetchSubmissionsPage: ${error.message}${hint}`);
